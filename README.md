@@ -3,7 +3,8 @@
 Privacy-respecting [Umami](https://umami.is/) analytics for static sites.
 It loads Umami's own tracker only when the visitor has not opted out, cleans every payload, adds a fixed set of interaction events, and ships the privacy notice that describes exactly that.
 
-It is built for [resume.dougborg.org](https://resume.dougborg.org/) and [dougborg.org](https://dougborg.org/), both counted by a self-hosted Umami at `stats.dougborg.net`, but it works with any Umami 3.x collector.
+It is built for [resume.dougborg.org](https://resume.dougborg.org/) and [dougborg.org](https://dougborg.org/), both counted by a self-hosted Umami at `stats.dougborg.net`.
+It supports the Umami version that collector runs, 3.4.0; see [Compatibility](#compatibility).
 
 ## What it collects
 
@@ -106,7 +107,30 @@ pnpm test:browser   # Playwright against an HTTPS fixture and Umami's real track
 ```
 
 The browser tests run Umami 3.4.0's own tracker source, vendored unchanged in `test/fixture/umami/` under its MIT license, against a fixture served over HTTPS with a throwaway self-signed certificate (the tests need `openssl`).
-When the collector upgrades, replace that file with the new release's `src/tracker/index.ts` and rerun the tests.
+They run in Chromium, Firefox, and WebKit; `pnpm exec playwright install chromium firefox webkit` fetches all three, and `--project=<engine>` runs one.
+
+## Compatibility
+
+### Umami
+
+The supported collector is Umami 3.4.0, the version `stats.dougborg.net` runs.
+The browser tests run that release's own tracker (`src/tracker/index.ts` at tag `v3.4.0`), pinned by its SHA-256 in `test/umami-fixture.test.ts`.
+Every request they record must pass the 3.4.0 `/api/send` schema, transcribed in `test/browser/umami-server.ts`, and must not carry a distinct ID or any other field the server would accept but this package never sends.
+
+Moving the collector to any other Umami version, including a 3.4.x patch, needs a compatibility review first:
+
+1. Replace `test/fixture/umami/tracker.ts` with the new release's tracker and update the pinned hash.
+2. Read the tracker's diff for new script attributes, payload fields, identifiers, or storage, and the `/api/send` schema's diff for new fields, and update `umami-server.ts`.
+3. Run the whole suite in all three engines, and fix or document every difference.
+4. Release this package with the new supported version stated here, then change the server image.
+
+### Browsers
+
+Every browser test runs in Chromium, Firefox, and WebKit, on Linux in CI.
+Two engine differences are expected and covered by the tests.
+Safari's WebKit trims a cross-site referrer to its origin before any script reads it, which only removes data.
+Playwright cannot observe the keepalive requests Chromium sends while a page unloads, so the test for leaving a page checks what the page hands to `fetch` in every engine.
+The module is ES2024; a browser too old to run it collects nothing, and the page works the same.
 
 ## Releases
 
