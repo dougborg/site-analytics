@@ -119,9 +119,12 @@ export type BuiltInEventName = keyof typeof BUILT_IN_EVENTS;
 export type DeclaredEventName = keyof typeof DECLARED_EVENTS;
 export type EventName = BuiltInEventName | DeclaredEventName;
 
+/** The Web Vitals fields of Umami's `performance` record, plus the time open. */
+export const METRIC_FIELDS = ["ttfb", "fcp", "lcp", "cls", "inp", "duration"] as const;
+
 /**
- * The only payload fields sent to Umami 3.4.0 for page views, events, and Web Vitals; the module
- * drops every other field, including Umami's distinct ID.
+ * The only payload fields sent to Umami 3.4.0 for page views, events, and Web Vitals. The module
+ * builds each payload from these alone, so it never sends Umami's distinct ID or tag.
  */
 export const PAYLOAD_FIELDS = [
   "website",
@@ -133,8 +136,7 @@ export const PAYLOAD_FIELDS = [
   "title",
   "name",
   "data",
-  "tag",
-  ...["ttfb", "fcp", "lcp", "cls", "inp", "duration"],
+  ...METRIC_FIELDS,
 ] as const;
 
 const FILE_NAME = /^[^/?#\s]{1,200}$/;
