@@ -40,3 +40,46 @@ jobs:
             test-results/
           retention-days: 7
           if-no-files-found: ignore
+
+  # engines.node promises the oldest supported LTS line; prove it builds, passes, and installs.
+  oldest-node:
+    name: Node 22 (engines floor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm check
+      - name: Install the packed package the way a consumer does, and use it
+        run: |
+          mkdir -p "$RUNNER_TEMP/consumer"
+          npm pack --pack-destination "$RUNNER_TEMP/consumer"
+          cd "$RUNNER_TEMP/consumer"
+          npm init -y > /dev/null
+          npm install --engine-strict ./dougborg-site-analytics-*.tgz
+          node --input-type=module -e '
+            import { configElement, privacyNotice } from "@dougborg/site-analytics";
+            const tag = configElement({
+              websiteId: "00000000-0000-4000-8000-000000000000",
+              collector: "https://stats.example.com",
+              hostname: "example.com",
+            });
+            const notice = privacyNotice({
+              site: "example.com",
+              controller: { name: "A", email: "a@example.com" },
+              collector: "https://stats.example.com",
+              hosting: "at home",
+              country: "the United States",
+              retentionDays: 90,
+              updated: "2026-09-23",
+            });
+            if (!tag.includes("site-analytics") || !notice.includes("Last updated")) process.exit(1);
+            console.log(process.version, "ok");
+          '

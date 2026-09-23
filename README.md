@@ -45,8 +45,11 @@ The config element's `data-state` attribute reports `blocked`, `loading`, `loade
 Install it, then render the config element and load the module on every tracked page:
 
 ```sh
-pnpm add @dougborg/site-analytics
+pnpm add --save-exact @dougborg/site-analytics
 ```
+
+The build-time API needs Node 22 or later, the oldest LTS line Node still supports; CI builds, tests, and installs the packed package on Node 22 as well as on the pinned development version in `.nvmrc`.
+The browser module has no Node dependency at all.
 
 ```ts
 import { configElement } from "@dougborg/site-analytics";
