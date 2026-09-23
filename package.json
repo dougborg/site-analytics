@@ -1,6 +1,6 @@
 {
   "name": "@dougborg/site-analytics",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Privacy-respecting Umami analytics for static sites: a guarded tracker loader with interaction events, config validation, and a matching privacy notice.",
   "license": "MIT",
   "author": "Douglas Borg",
