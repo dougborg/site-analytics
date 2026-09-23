@@ -69,7 +69,12 @@ const links = `<h1>Fixture</h1>
 <p><a id="umami-event" href="/other" data-umami-event="umami-own" data-umami-event-email="bob@example.com">Umami's own</a></p>
 <div style="height: 4000px"></div>
 <p id="end">End</p>
-<script>document.addEventListener("click", (event) => { if (!event.target.closest("#umami-event")) event.preventDefault(); });</script>`;
+<script>
+// Keep the fixture on this page: a click or middle click would otherwise follow the link.
+for (const type of ["click", "auxclick"]) {
+  document.addEventListener(type, (event) => { if (!event.target.closest("#umami-event")) event.preventDefault(); });
+}
+</script>`;
 
 const noticeOptions = {
   site: "fixture.example",

@@ -11,7 +11,7 @@ Use the pinned Node (`.nvmrc`) and pnpm (`packageManager`); run from the repo ro
 pnpm install --frozen-lockfile
 pnpm build          # dist/ (ignored by git)
 pnpm check          # Biome, rumdl, tsc, Knip, node --test
-pnpm test:browser   # Playwright on the fixture page, port 4175
+pnpm test:browser   # Playwright in Chromium, Firefox, and WebKit, port 4175
 ```
 
 Run `actionlint` after editing workflows.
@@ -23,7 +23,8 @@ Run `actionlint` after editing workflows.
 - Never collect typed input, link text, email addresses, element classes, or click positions, and never call `umami.identify`.
 - Global Privacy Control, Do Not Track, the opt-out flag, non-HTTPS pages, other hostnames, frames, prerendering, automation, and a missing or invalid config prevent the tracker from loading at all.
 - The browser module revalidates its config and never trusts page markup; the `before-send` hook stays non-writable and drops any event this module did not send.
-- Browser tests run Umami's real tracker from `test/fixture/umami/`; keep that file byte-identical to the pinned release and excluded from formatting.
+- Browser tests run Umami's real tracker from `test/fixture/umami/` in Chromium, Firefox, and WebKit; keep that file byte-identical to the supported release (its hash is pinned in `test/umami-fixture.test.ts`) and excluded from formatting.
+- Changing the supported Umami version follows the review in README "Compatibility".
 - Analytics never delays rendering, navigation, or downloads.
 - Biome cognitive complexity stays at most 15 per function.
 - Write one sentence per line in Markdown.

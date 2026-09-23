@@ -1,58 +1,11 @@
-import { expect, type Page, test } from "@playwright/test";
-
-type Sent = { type: string; payload: Record<string, unknown> };
-
-/**
- * Serve Umami 3.4.0's real tracker as the collector's script.js and record what reaches
- * /api/send. Playwright's browser reports `navigator.webdriver`, which the module treats as
- * automation, so tests that expect collection hide it the way an ordinary browser would.
- */
-async function collector(page: Page, { human = true, delay = 0, fail = false } = {}) {
-  const sent: Sent[] = [];
-  const requested: string[] = [];
-  if (human) {
-    await page.addInitScript(() => {
-      Object.defineProperty(Navigator.prototype, "webdriver", { get: () => false });
-    });
-  }
-  const tracker = await (await page.request.get("/umami.js")).text();
-  await page.route("https://stats.example.test/**", async (route) => {
-    const url = new URL(route.request().url());
-    requested.push(url.pathname);
-    if (fail) return route.abort();
-    if (url.pathname === "/script.js") {
-      return route.fulfill({ contentType: "text/javascript", body: tracker });
-    }
-    if (route.request().method() === "OPTIONS") {
-      return route.fulfill({ headers: corsHeaders });
-    }
-    sent.push(route.request().postDataJSON() as Sent);
-    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-    return route.fulfill({ json: {}, headers: corsHeaders });
-  });
-  return { sent, requested };
-}
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "Content-Type, x-umami-cache, x-umami-website-id, x-umami-hostname",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-};
-
-const events = (sent: Sent[]) =>
-  sent.filter((s) => s.payload.name).map((s) => [s.payload.name, s.payload.data]);
-const pageviews = (sent: Sent[]) => sent.filter((s) => s.type === "event" && !s.payload.name);
-const state = (page: Page) => page.locator("#site-analytics").getAttribute("data-state");
-
-async function loaded(sent: Sent[]) {
-  await expect.poll(() => pageviews(sent).length).toBe(1);
-}
+import type { Page } from "@playwright/test";
+import { events, expect, loaded, pageviews, setVisibility, state, test } from "./collector.ts";
 
 test("sends a page view with only standard campaign tags and no fragment or identifiers", async ({
   page,
+  collector,
 }) => {
-  const { sent } = await collector(page);
+  const { sent } = await collector();
   await page.goto(
     "/?q=secret&utm_source=newsletter&utm_email=bob%40example.com&utm_content=alice%40example.com#s",
     { referer: "https://news.example/item?id=42#top" },
@@ -60,13 +13,14 @@ test("sends a page view with only standard campaign tags and no fragment or iden
   await loaded(sent);
   const [view] = pageviews(sent);
   expect(view.payload.url).toBe("https://127.0.0.1:4175/?utm_source=newsletter");
-  expect(view.payload.referrer).toBe("https://news.example/item");
+  // Safari's WebKit trims a cross-site referrer to its origin before any script can read it.
+  expect(["https://news.example/item", "https://news.example/"]).toContain(view.payload.referrer);
   expect(view.payload).not.toHaveProperty("id");
   expect(await state(page)).toBe("loaded");
 });
 
-test("redacts email addresses in page paths and titles", async ({ page }) => {
-  const { sent } = await collector(page);
+test("redacts email addresses in page paths and titles", async ({ page, collector }) => {
+  const { sent } = await collector();
   await page.goto("/people/alice@example.com/");
   await loaded(sent);
   const [view] = pageviews(sent);
@@ -76,8 +30,9 @@ test("redacts email addresses in page paths and titles", async ({ page }) => {
 
 test("redacts only path segments holding an address and keeps other encodings", async ({
   page,
+  collector,
 }) => {
-  const { sent } = await collector(page);
+  const { sent } = await collector();
   await page.goto("/");
   await loaded(sent);
   await page.evaluate(() =>
@@ -89,8 +44,11 @@ test("redacts only path segments holding an address and keeps other encodings", 
   );
 });
 
-test("sends only Umami's own payload fields, with event data redacted", async ({ page }) => {
-  const { sent } = await collector(page);
+test("sends only Umami's own payload fields, with event data redacted", async ({
+  page,
+  collector,
+}) => {
+  const { sent } = await collector();
   await page.goto("/");
   await loaded(sent);
   await page.evaluate(() => {
@@ -110,8 +68,9 @@ test("sends only Umami's own payload fields, with event data redacted", async ({
 
 test("catches encoded addresses in titles, links, file names, and campaign tags", async ({
   page,
+  collector,
 }) => {
-  const { sent } = await collector(page);
+  const { sent } = await collector();
   await page.goto("/?utm_source=bob%2540example.com&utm_medium=email");
   await loaded(sent);
   expect(pageviews(sent)[0].payload.url).toBe("https://127.0.0.1:4175/?utm_medium=email");
@@ -135,15 +94,21 @@ test("catches encoded addresses in titles, links, file names, and campaign tags"
   expect(pageviews(sent)[1].payload.title).toBe("Contact [email]");
 });
 
-test("a same-site referrer keeps Umami's relative shape without its query", async ({ page }) => {
-  const { sent } = await collector(page);
+test("a same-site referrer keeps Umami's relative shape without its query", async ({
+  page,
+  collector,
+}) => {
+  const { sent } = await collector();
   await page.goto("/", { referer: "https://127.0.0.1:4175/privacy/?tab=2#x" });
   await loaded(sent);
   expect(pageviews(sent)[0].payload.referrer).toBe("/privacy/");
 });
 
-test("records link and control clicks without link text or addresses", async ({ page }) => {
-  const { sent } = await collector(page);
+test("records link and control clicks without link text or addresses", async ({
+  page,
+  collector,
+}) => {
+  const { sent } = await collector();
   await page.goto("/");
   await loaded(sent);
   for (const id of ["outbound", "readme", "download", "download-attr", "email", "internal"]) {
@@ -170,8 +135,11 @@ test("records link and control clicks without link text or addresses", async ({ 
   ]);
 });
 
-test("drops Umami's own data-umami-event clicks without delaying navigation", async ({ page }) => {
-  const { sent } = await collector(page, { delay: 3000 });
+test("drops Umami's own data-umami-event clicks without delaying navigation", async ({
+  page,
+  collector,
+}) => {
+  const { sent } = await collector({ delay: 3000 });
   await page.goto("/");
   await loaded(sent);
   const started = Date.now();
@@ -181,8 +149,11 @@ test("drops Umami's own data-umami-event clicks without delaying navigation", as
   expect(sent.some((s) => s.payload.name === "umami-own")).toBe(false);
 });
 
-test("counts scroll depth only after the visitor scrolls, once per depth", async ({ page }) => {
-  const { sent } = await collector(page);
+test("counts scroll depth only after the visitor scrolls, once per depth", async ({
+  page,
+  collector,
+}) => {
+  const { sent } = await collector();
   await page.setViewportSize({ width: 800, height: 600 });
   await page.goto("/#end");
   await loaded(sent);
@@ -207,17 +178,11 @@ test("counts scroll depth only after the visitor scrolls, once per depth", async
   ]);
 });
 
-async function setVisibility(page: Page, visibility: "visible" | "hidden") {
-  await page.evaluate((value) => {
-    Object.defineProperty(document, "visibilityState", { value, configurable: true });
-    document.dispatchEvent(new Event("visibilitychange"));
-  }, visibility);
-}
-
 test("reports visible seconds each time the page is hidden, never hidden time", async ({
   page,
+  collector,
 }) => {
-  const { sent } = await collector(page);
+  const { sent } = await collector();
   await page.goto("/");
   await loaded(sent);
   await page.waitForTimeout(1200);
@@ -231,8 +196,8 @@ test("reports visible seconds each time the page is hidden, never hidden time", 
   expect(seconds).toEqual([1, 1]);
 });
 
-test("loads once even when the module is included twice", async ({ page }) => {
-  const { sent, requested } = await collector(page);
+test("loads once even when the module is included twice", async ({ page, collector }) => {
+  const { sent, requested } = await collector();
   await page.goto("/double");
   await loaded(sent);
   await page.waitForTimeout(500);
@@ -240,8 +205,8 @@ test("loads once even when the module is included twice", async ({ page }) => {
   expect(requested.filter((path) => path === "/script.js")).toHaveLength(1);
 });
 
-test("the before-send hook cannot be replaced by page scripts", async ({ page }) => {
-  const { sent } = await collector(page);
+test("the before-send hook cannot be replaced by page scripts", async ({ page, collector }) => {
+  const { sent } = await collector();
   await page.goto("/");
   await loaded(sent);
   await page.evaluate(() => {
@@ -254,8 +219,8 @@ test("the before-send hook cannot be replaced by page scripts", async ({ page })
   expect(pageviews(sent)[1].payload.url).toBe("https://127.0.0.1:4175/other");
 });
 
-test("never sends identify calls", async ({ page }) => {
-  const { sent } = await collector(page);
+test("never sends identify calls", async ({ page, collector }) => {
+  const { sent } = await collector();
   await page.goto("/");
   await loaded(sent);
   await page.evaluate(() =>
@@ -267,8 +232,8 @@ test("never sends identify calls", async ({ page }) => {
   expect(sent.map((s) => s.type)).toEqual(["event"]);
 });
 
-test("stops sending as soon as the visitor opts out", async ({ page }) => {
-  const { sent } = await collector(page);
+test("stops sending as soon as the visitor opts out", async ({ page, collector }) => {
+  const { sent } = await collector();
   await page.goto("/");
   await loaded(sent);
   await page.evaluate(() => localStorage.setItem("umami.disabled", "1"));
@@ -277,8 +242,8 @@ test("stops sending as soon as the visitor opts out", async ({ page }) => {
   expect(events(sent)).toEqual([]);
 });
 
-test("drops events when the tracker fails to load", async ({ page }) => {
-  const { sent } = await collector(page, { fail: true });
+test("drops events when the tracker fails to load", async ({ page, collector }) => {
+  const { sent } = await collector({ fail: true });
   await page.goto("/");
   await expect.poll(() => state(page)).toBe("failed");
   await page.click("#outbound");
@@ -307,8 +272,8 @@ const blockers: [string, (page: Page) => Promise<unknown>][] = [
 ];
 
 for (const [name, block] of blockers) {
-  test(`does not load the tracker with ${name}`, async ({ page }) => {
-    const { requested } = await collector(page);
+  test(`does not load the tracker with ${name}`, async ({ page, collector }) => {
+    const { requested } = await collector();
     await block(page);
     await page.goto("/");
     await expect.poll(() => state(page)).toBe("blocked");
@@ -316,8 +281,11 @@ for (const [name, block] of blockers) {
   });
 }
 
-test("does not load the tracker for automation or another hostname", async ({ page }) => {
-  const automated = await collector(page, { human: false });
+test("does not load the tracker for automation or another hostname", async ({
+  page,
+  collector,
+}) => {
+  const automated = await collector({ human: false });
   await page.goto("/");
   await expect.poll(() => state(page)).toBe("blocked");
   expect(automated.requested).toEqual([]);
@@ -330,8 +298,8 @@ test("does not load the tracker for automation or another hostname", async ({ pa
   expect(automated.requested).toEqual([]);
 });
 
-test("ignores a spoofed or invalid config", async ({ page }) => {
-  const { requested } = await collector(page);
+test("ignores a spoofed or invalid config", async ({ page, collector }) => {
+  const { requested } = await collector();
   await page.goto("/spoofed");
   await page.waitForLoadState("load");
   await page.goto("/bad-collector");
@@ -342,8 +310,8 @@ test("ignores a spoofed or invalid config", async ({ page }) => {
   expect(await state(page)).toBeNull();
 });
 
-test("opt-out controls toggle counting and stay in sync", async ({ page }) => {
-  await collector(page);
+test("opt-out controls toggle counting and stay in sync", async ({ page, collector }) => {
+  await collector();
   await page.goto("/privacy/");
   const status = page.getByRole("status");
   await expect(status).toHaveText(Array(2).fill("This site counts your visits in this browser."));
