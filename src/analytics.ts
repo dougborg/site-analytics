@@ -1,10 +1,18 @@
 /**
  * Browser module: loads Umami's tracker only when the visitor has not opted out, sanitizes every
- * payload, and adds a fixed set of interaction events. It never blocks rendering, navigation, or
- * downloads, and the page works the same without it. It is one self-contained file so sites can
- * copy it without a bundler.
+ * payload, and sends only the events in the collection contract. It never blocks rendering,
+ * navigation, or downloads, and the page works the same without it. The build inlines the contract,
+ * so the published file is self-contained and sites can copy it without a bundler.
  */
 import type { AnalyticsConfig } from "./config.ts";
+import {
+  allowedEvent,
+  DECLARED_EVENTS,
+  DOWNLOAD_FORMATS,
+  type EventName,
+  PAYLOAD_FIELDS,
+  SCROLL_DEPTHS,
+} from "./contract.ts";
 
 type Payload = Record<string, unknown>;
 type EventData = Record<string, string | number>;
@@ -20,9 +28,7 @@ const win = window as AnalyticsWindow;
 /** Umami's documented opt-out key; its tracker also reads it. */
 const OPT_OUT_KEY = "umami.disabled";
 const HOOK = "siteAnalyticsBeforeSend";
-const SCROLL_DEPTHS = [25, 50, 75, 100] as const;
-/** Static sites link files, not APIs, so these same-origin extensions mean a download. */
-const DOWNLOAD_EXTENSIONS = new Set(["pdf", "docx", "md", "json", "zip", "csv", "txt", "epub"]);
+const DOWNLOADS = new Set<string>(DOWNLOAD_FORMATS);
 /** Umami parses only these; anything else under `utm_` is stored but useless. */
 const CAMPAIGN_KEYS = new Set([
   "utm_source",
@@ -160,17 +166,6 @@ function cleanUrl(raw: unknown, keepCampaign: boolean): unknown {
   }
 }
 
-/** The fields Umami 3.4.0 sends for page views, events, and Web Vitals; anything else is dropped. */
-const PAYLOAD_KEYS = [
-  "website",
-  "hostname",
-  "screen",
-  "language",
-  "name",
-  "tag",
-  ...["ttfb", "fcp", "lcp", "cls", "inp", "duration"],
-] as const;
-
 function cleanData(data: unknown): EventData | undefined {
   if (typeof data !== "object" || data === null) return undefined;
   const clean: EventData = {};
@@ -187,22 +182,33 @@ function cleanData(data: unknown): EventData | undefined {
  */
 let sending = false;
 
+/** Fields that are cleaned rather than copied; undefined drops the field. */
+const CLEANERS: Partial<Record<(typeof PAYLOAD_FIELDS)[number], (value: unknown) => unknown>> = {
+  url: (value) => cleanUrl(value, true),
+  referrer: (value) => cleanUrl(value, false),
+  // Umami's server decodes titles, so an encoded address must be caught here too.
+  title: (value) => (typeof value === "string" ? redact(decoded(value)) : undefined),
+  data: cleanData,
+};
+
 function beforeSend(type: string, payload: Payload): Payload | null {
   if (type === "identify" || optedOut() || privacySignal()) return null;
   if (payload.name !== undefined && !sending) return null;
   const clean: Payload = {};
-  for (const key of PAYLOAD_KEYS) if (key in payload) clean[key] = payload[key];
-  clean.url = cleanUrl(payload.url, true);
-  clean.referrer = cleanUrl(payload.referrer, false);
-  // Umami's server decodes titles, so an encoded address must be caught here too.
-  if (typeof payload.title === "string") clean.title = redact(decoded(payload.title));
-  if (payload.data !== undefined) clean.data = cleanData(payload.data);
+  // Only this module's own events carry data, and `track` has checked it against the contract.
+  const fields =
+    payload.name === undefined ? PAYLOAD_FIELDS.filter((key) => key !== "data") : PAYLOAD_FIELDS;
+  for (const key of fields) {
+    if (!(key in payload)) continue;
+    const cleaner = CLEANERS[key];
+    clean[key] = cleaner ? cleaner(payload[key]) : payload[key];
+  }
   return clean;
 }
 
 /* Sending: events wait for the tracker, and are dropped if it never loads. */
 
-const queue: [string, EventData][] = [];
+const queue: [EventName, EventData][] = [];
 let state: State = "off";
 /** Umami's track function as loaded, so a page script that replaces it cannot borrow our flag. */
 let umamiTrack: Umami["track"] | undefined;
@@ -212,11 +218,13 @@ function setState(next: State) {
   document.getElementById("site-analytics")?.setAttribute("data-state", next);
 }
 
-function track(name: string, data: EventData) {
+/** Send one event, or drop it if the collection contract does not allow exactly this data. */
+function track(name: EventName, data: EventData) {
   const clean: EventData = {};
   for (const [key, value] of Object.entries(data)) {
     clean[key] = typeof value === "string" ? redact(value).slice(0, 200) : value;
   }
+  if (!allowedEvent(name, clean)) return;
   if (state === "loaded" && umamiTrack) {
     sending = true;
     try {
@@ -271,17 +279,20 @@ function loadTracker(config: AnalyticsConfig) {
 
 /* Interaction events */
 
-/** `data-analytics-event="name"` with `data-analytics-<key>="value"` properties. */
-function declaredEvent(element: Element): [string, EventData] | undefined {
+/**
+ * `data-analytics-event="name"` with one `data-analytics-<field>="value"` per field. Only events in
+ * `DECLARED_EVENTS`, with exactly their fields and allowed values, count; anything else is ignored.
+ */
+function declaredEvent(element: Element): [EventName, EventData] | undefined {
   const source = element.closest("[data-analytics-event]");
   const name = source?.getAttribute("data-analytics-event");
-  if (!source || !name) return undefined;
+  if (!source || !name || !Object.hasOwn(DECLARED_EVENTS, name)) return undefined;
   const data: EventData = {};
   for (const attribute of source.getAttributeNames()) {
     const key = attribute.match(/^data-analytics-([a-z0-9-]+)$/)?.[1];
     if (key && key !== "event") data[key] = source.getAttribute(attribute) ?? "";
   }
-  return [name.slice(0, 50), data];
+  return allowedEvent(name, data) ? [name as EventName, data] : undefined;
 }
 
 function linkUrl(link: Element): URL | undefined {
@@ -293,7 +304,7 @@ function linkUrl(link: Element): URL | undefined {
   }
 }
 
-function linkEvent(link: Element): [string, EventData] | undefined {
+function linkEvent(link: Element): [EventName, EventData] | undefined {
   const url = linkUrl(link);
   if (!url) return undefined;
   if (url.protocol === "mailto:") return ["contact-click", { method: "email" }];
@@ -302,9 +313,9 @@ function linkEvent(link: Element): [string, EventData] | undefined {
   const sameOrigin = url.origin === location.origin;
   const file = url.pathname.split("/").pop() ?? "";
   const extension = file.includes(".") ? file.split(".").pop()?.toLowerCase() : undefined;
-  const isFile = extension !== undefined && DOWNLOAD_EXTENSIONS.has(extension);
-  if (link.hasAttribute("download") || (sameOrigin && isFile)) {
-    return ["download-click", { format: extension ?? "file", file: redactPath(file) }];
+  const format = extension !== undefined && DOWNLOADS.has(extension) ? extension : undefined;
+  if (link.hasAttribute("download") || (sameOrigin && format)) {
+    return ["download-click", { format: format ?? "file", file: redactPath(file) }];
   }
   if (!sameOrigin) return ["outbound-click", { url: url.origin + redactPath(url.pathname) }];
   return undefined;

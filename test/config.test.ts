@@ -50,9 +50,10 @@ test("the notice names every interaction event the module sends", () => {
   for (const phrase of [
     "scroll",
     "seconds the page was visible",
-    "leave the site",
-    "file downloads",
-    "email or phone links",
+    "leaves the site",
+    "file download",
+    "email or phone link",
+    "theme switch",
     "Web Vitals",
     "utm_",
   ]) {

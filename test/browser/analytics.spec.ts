@@ -44,7 +44,7 @@ test("redacts only path segments holding an address and keeps other encodings", 
   );
 });
 
-test("sends only Umami's own payload fields, with event data redacted", async ({
+test("sends only Umami's own payload fields, and no data on page views", async ({
   page,
   collector,
 }) => {
@@ -63,7 +63,7 @@ test("sends only Umami's own payload fields, with event data redacted", async ({
   await expect.poll(() => pageviews(sent).length).toBe(2);
   const payload = pageviews(sent)[1].payload;
   expect(payload).not.toHaveProperty("extra");
-  expect(payload.data).toEqual({ email: "[email]", n: 1 });
+  expect(payload).not.toHaveProperty("data");
 });
 
 test("catches encoded addresses in titles, links, file names, and campaign tags", async ({
@@ -119,7 +119,7 @@ test("records link and control clicks without link text or addresses", async ({
   await page.locator("#area").dispatchEvent("click");
   await page.click("#outbound", { button: "middle" });
   await page.click("#declared", { button: "middle" });
-  await expect.poll(() => events(sent).length).toBe(11);
+  await expect.poll(() => events(sent).length).toBe(10);
   expect(events(sent)).toEqual([
     ["outbound-click", { url: "https://example.org/path" }],
     ["outbound-click", { url: "https://github.com/x/y/blob/main/README.md" }],
@@ -127,11 +127,25 @@ test("records link and control clicks without link text or addresses", async ({
     ["download-click", { format: "file", file: "export" }],
     ["contact-click", { method: "email" }],
     ["theme-toggle", { theme: "dark" }],
-    ["note", { who: "[email]" }],
     ["outbound-click", { url: "https://example.net/svg" }],
     ["outbound-click", { url: "https://example.net/xlink" }],
     ["outbound-click", { url: "https://example.com/area" }],
     ["outbound-click", { url: "https://example.org/path" }],
+  ]);
+});
+
+test("drops declared events outside the collection contract", async ({ page, collector }) => {
+  const { sent } = await collector();
+  await page.goto("/");
+  await loaded(sent);
+  for (const id of ["leaky", "declared-bad", "declared-extra", "declared-link", "declared"]) {
+    await page.click(`#${id}`);
+  }
+  await expect.poll(() => events(sent).length).toBe(2);
+  // An undeclared event on a link leaves the link event; the rest send nothing.
+  expect(events(sent)).toEqual([
+    ["outbound-click", { url: "https://example.org/x" }],
+    ["theme-toggle", { theme: "dark" }],
   ]);
 });
 

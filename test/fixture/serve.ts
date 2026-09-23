@@ -62,6 +62,9 @@ const links = `<h1>Fixture</h1>
 <p><a id="internal" href="/other">Internal</a></p>
 <p><button id="declared" data-analytics-event="theme-toggle" data-analytics-theme="dark">Declared</button></p>
 <p><button id="leaky" data-analytics-event="note" data-analytics-who="bob@example.com">Leaky</button></p>
+<p><button id="declared-bad" data-analytics-event="theme-toggle" data-analytics-theme="bob@example.com">Bad value</button></p>
+<p><button id="declared-extra" data-analytics-event="theme-toggle" data-analytics-theme="dark" data-analytics-class="btn">Extra field</button></p>
+<p><a id="declared-link" href="https://example.org/x?y=1" data-analytics-event="signup" data-analytics-plan="pro">Undeclared on a link</a></p>
 <p><svg width="40" height="20"><a id="svg-link" href="https://example.net/svg"><text x="0" y="15">SVG</text></a></svg></p>
 <p><svg width="40" height="20" xmlns:xlink="http://www.w3.org/1999/xlink"><a id="svg-xlink" xlink:href="https://example.net/xlink"><text x="0" y="15">XL</text></a></svg></p>
 <p><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" usemap="#map" width="20" height="20" alt="">
