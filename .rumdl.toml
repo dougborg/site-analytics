@@ -1,6 +1,6 @@
 [global]
 flavor = "gfm"
-include = ["*.md", ".github/**/*.md"]
+include = ["*.md", "docs/**/*.md", ".github/**/*.md"]
 # release-please generates CHANGELOG.md.
 exclude = ["node_modules", "dist", "fixture", ".claude", "CHANGELOG.md"]
 cache = false

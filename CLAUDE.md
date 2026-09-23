@@ -36,4 +36,10 @@ Run `actionlint` after editing workflows.
 
 ## Consumers
 
-[resume.dougborg.org](https://github.com/dougborg/resume) and [dougborg.org](https://github.com/dougborg/dougborg.github.io) use it with separate Umami website IDs.
+[docs/consumers.md](docs/consumers.md) is the consumer matrix (résumé, blog, `www.dougborg.net`) with one Umami website ID per origin, and the upgrade rule: exact pins, and a privacy review plus a new notice date for any release that widens collection.
+Update it whenever a site adopts, upgrades, or changes its website ID.
+
+## Releasing
+
+[docs/releasing.md](docs/releasing.md) is the npm runbook.
+Agents never publish, tag, create Releases, approve staged versions, or merge release-please PRs; those are the owner's steps.
