@@ -32,7 +32,9 @@ const CAMPAIGN_KEYS = new Set([
   "utm_term",
 ]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const EMAIL = /[^\s/?#&=:@]+@[^\s/?#&=:@]+\.[^\s/?#&=:@]+/g;
+/** Bounded parts keep matching linear, so long hostile strings cannot stall the page. */
+const EMAIL = /[^\s/?#&=:@]{1,64}@[^\s/?#&=:@.]{1,63}(?:\.[^\s/?#&=:@.]{1,63}){1,8}/g;
+const MAX_TEXT = 2000;
 
 /* Privacy state */
 
@@ -106,7 +108,7 @@ function blocked(config: AnalyticsConfig) {
 
 /* Payload cleaning */
 
-const redact = (text: string) => text.replace(EMAIL, "[email]");
+const redact = (text: string) => text.slice(0, MAX_TEXT).replace(EMAIL, "[email]");
 
 function redactPath(path: string) {
   try {
