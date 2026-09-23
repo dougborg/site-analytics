@@ -37,8 +37,8 @@ jobs:
   # each one, so every commit in the pull request must be Conventional too.
   lint-commits:
     name: Conventional commits
-    # Editing the title or body adds no commits, so there is nothing to re-lint.
-    if: github.event.action != 'edited'
+    # Runs on `edited` too: a skipped run would become the check's latest
+    # result, and GitHub counts a skipped required check as passing.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
