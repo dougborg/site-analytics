@@ -145,7 +145,10 @@ function cleanUrl(raw: unknown, keepCampaign: boolean): unknown {
     const url = new URL(raw, location.href);
     const params = [...url.searchParams].filter(
       ([key, value]) =>
-        keepCampaign && CAMPAIGN_KEYS.has(key) && value.length <= 100 && !value.includes("@"),
+        keepCampaign &&
+        CAMPAIGN_KEYS.has(key) &&
+        value.length <= 100 &&
+        !decoded(value).includes("@"),
     );
     url.search = new URLSearchParams(params).toString();
     url.hash = "";
@@ -191,7 +194,8 @@ function beforeSend(type: string, payload: Payload): Payload | null {
   for (const key of PAYLOAD_KEYS) if (key in payload) clean[key] = payload[key];
   clean.url = cleanUrl(payload.url, true);
   clean.referrer = cleanUrl(payload.referrer, false);
-  if (typeof payload.title === "string") clean.title = redact(payload.title);
+  // Umami's server decodes titles, so an encoded address must be caught here too.
+  if (typeof payload.title === "string") clean.title = redact(decoded(payload.title));
   if (payload.data !== undefined) clean.data = cleanData(payload.data);
   return clean;
 }
@@ -246,7 +250,13 @@ function loadTracker(config: AnalyticsConfig) {
   for (const [name, value] of Object.entries(attributes))
     script.setAttribute(`data-${name}`, value);
   script.addEventListener("load", () => {
-    umamiTrack = win.umami?.track.bind(win.umami);
+    const umamiTrackFn = win.umami?.track;
+    if (typeof umamiTrackFn !== "function") {
+      setState("failed");
+      queue.length = 0;
+      return;
+    }
+    umamiTrack = umamiTrackFn.bind(win.umami);
     setState("loaded");
     for (const [name, data] of queue.splice(0)) track(name, data);
   });
@@ -294,9 +304,9 @@ function linkEvent(link: Element): [string, EventData] | undefined {
   const extension = file.includes(".") ? file.split(".").pop()?.toLowerCase() : undefined;
   const isFile = extension !== undefined && DOWNLOAD_EXTENSIONS.has(extension);
   if (link.hasAttribute("download") || (sameOrigin && isFile)) {
-    return ["download-click", { format: extension ?? "file", file }];
+    return ["download-click", { format: extension ?? "file", file: redactPath(file) }];
   }
-  if (!sameOrigin) return ["outbound-click", { url: url.origin + url.pathname }];
+  if (!sameOrigin) return ["outbound-click", { url: url.origin + redactPath(url.pathname) }];
   return undefined;
 }
 

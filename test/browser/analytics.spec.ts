@@ -108,6 +108,33 @@ test("sends only Umami's own payload fields, with event data redacted", async ({
   expect(payload.data).toEqual({ email: "[email]", n: 1 });
 });
 
+test("catches encoded addresses in titles, links, file names, and campaign tags", async ({
+  page,
+}) => {
+  const { sent } = await collector(page);
+  await page.goto("/?utm_source=bob%2540example.com&utm_medium=email");
+  await loaded(sent);
+  expect(pageviews(sent)[0].payload.url).toBe("https://127.0.0.1:4175/?utm_medium=email");
+  await page.evaluate(() => {
+    document.title = "Contact bob%40example.com";
+    for (const href of [
+      "https://x.example/u/alice%40example.com/p",
+      "/files/alice%40example.com.pdf",
+    ]) {
+      const link = Object.assign(document.createElement("a"), { href, textContent: href });
+      document.body.append(link);
+      link.click();
+    }
+    history.pushState({}, "", "/other");
+  });
+  await expect.poll(() => pageviews(sent).length).toBe(2);
+  expect(events(sent)).toEqual([
+    ["outbound-click", { url: "https://x.example/u/[email]/p" }],
+    ["download-click", { format: "pdf", file: "[email]" }],
+  ]);
+  expect(pageviews(sent)[1].payload.title).toBe("Contact [email]");
+});
+
 test("a same-site referrer keeps Umami's relative shape without its query", async ({ page }) => {
   const { sent } = await collector(page);
   await page.goto("/", { referer: "https://127.0.0.1:4175/privacy/?tab=2#x" });

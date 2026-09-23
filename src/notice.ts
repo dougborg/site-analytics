@@ -81,7 +81,7 @@ export function privacyNotice(options: NoticeOptions): string {
 <ul>
 <li>the page address and title, and the address of the page that linked you here. Fragments and query parameters are removed, except the standard campaign tags <code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, <code>utm_content</code>, and <code>utm_term</code> on the page address, and anything that looks like an email address is replaced;</li>
 <li>your screen size and browser language;</li>
-<li>how quickly the page loaded and responded (the Web Vitals measures TTFB, FCP, LCP, CLS, and INP) and how long it had been open when they were measured;</li>
+<li>how quickly the page loaded and responded (the Web Vitals measures TTFB, FCP, LCP, CLS, and INP);</li>
 <li>how far down the page you scroll (25, 50, 75, and 100 percent) and how many seconds the page was visible;</li>
 <li>clicks on links that leave the site, file downloads, and email or phone links, and on a few named controls such as a theme switch, with the choice made. Only the destination or the control's name is recorded: never the text of an email address, anything you type, or where on the page you clicked.</li>
 </ul>

@@ -10,7 +10,7 @@ It is built for [resume.dougborg.org](https://resume.dougborg.org/) and [dougbor
 | Event | When | Data |
 | --- | --- | --- |
 | Page view | Each page load and history navigation (Umami) | URL keeping only `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, and `utm_term`; title; referrer without query or fragment; screen; language |
-| `performance` | Page load (Umami) | Web Vitals (TTFB, FCP, LCP, CLS, INP) and how long the page had been open |
+| `performance` | Page load (Umami) | Web Vitals: TTFB, FCP, LCP, CLS, INP (the tracker also sends the time open, which Umami 3.4.0 discards) |
 | `scroll-depth` | The first time the visitor, after scrolling themselves, reaches 25, 50, 75, or 100 percent of a page that scrolls | `depth` |
 | `engaged-time` | Each time the page is hidden or left | `seconds` visible since the last report, at most 3600; their sum is the page's total |
 | `outbound-click` | A click or middle click on a link or image-map area to another origin | `url`: origin and path only |
