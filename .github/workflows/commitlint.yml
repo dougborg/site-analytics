@@ -1,4 +1,4 @@
-name: PR title
+name: Commit conventions
 
 on:
   pull_request:
@@ -27,6 +27,7 @@ jobs:
             ci
             build
             perf
+            revert
             style
           requireScope: false
           subjectPattern: ^(?![A-Z]).+$
@@ -36,6 +37,8 @@ jobs:
   # each one, so every commit in the pull request must be Conventional too.
   lint-commits:
     name: Conventional commits
+    # Editing the title or body adds no commits, so there is nothing to re-lint.
+    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
