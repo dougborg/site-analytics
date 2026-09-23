@@ -1,0 +1,79 @@
+{
+  "name": "@dougborg/site-analytics",
+  "version": "0.1.0",
+  "description": "Privacy-respecting Umami analytics for static sites: a guarded tracker loader with interaction events, config validation, and a matching privacy notice.",
+  "license": "MIT",
+  "author": "Douglas Borg",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dougborg/site-analytics.git"
+  },
+  "homepage": "https://github.com/dougborg/site-analytics#readme",
+  "bugs": "https://github.com/dougborg/site-analytics/issues",
+  "keywords": [
+    "umami",
+    "analytics",
+    "privacy",
+    "global-privacy-control",
+    "astro"
+  ],
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./analytics.js": {
+      "types": "./dist/analytics.d.ts",
+      "default": "./dist/analytics.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "sideEffects": [
+    "./dist/analytics.js"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=26.8.2"
+  },
+  "packageManager": "pnpm@12.4.1",
+  "volta": {
+    "node": "26.8.2"
+  },
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepack": "pnpm build",
+    "check": "pnpm lint && pnpm typecheck && pnpm check:unused && pnpm test",
+    "lint": "biome check . && rumdl check .",
+    "format": "biome check --write . && rumdl fmt .",
+    "typecheck": "tsc --noEmit",
+    "check:unused": "knip --no-progress",
+    "test": "node --test test/*.test.ts",
+    "test:browser": "playwright test",
+    "preview": "node test/fixture/serve.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.14",
+    "@playwright/test": "1.63.0",
+    "@types/node": "26.6.2",
+    "knip": "6.37.0",
+    "rumdl": "0.2.75",
+    "typescript": "7.0.2"
+  },
+  "knip": {
+    "entry": [
+      "src/index.ts",
+      "src/analytics.ts",
+      "test/**/*.ts"
+    ],
+    "project": [
+      "src/**/*.ts",
+      "test/**/*.ts"
+    ]
+  }
+}

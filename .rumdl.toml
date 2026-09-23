@@ -1,0 +1,13 @@
+[global]
+flavor = "gfm"
+include = ["*.md", ".github/**/*.md"]
+# release-please generates CHANGELOG.md.
+exclude = ["node_modules", "dist", "fixture", ".claude", "CHANGELOG.md"]
+cache = false
+
+[MD013]
+line-length = 0
+reflow = true
+reflow-mode = "sentence-per-line"
+code-blocks = false
+tables = false
