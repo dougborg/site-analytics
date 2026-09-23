@@ -33,7 +33,7 @@ const CAMPAIGN_KEYS = new Set([
 ]);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Bounded parts keep matching linear, so long hostile strings cannot stall the page. */
-const EMAIL = /[^\s/?#&=:@]{1,64}@[^\s/?#&=:@.]{1,63}(?:\.[^\s/?#&=:@.]{1,63}){1,8}/g;
+const EMAIL = /[^\s/?#&=:@]{1,64}@(?:[^\s/?#&=:@.]{1,63}\.){1,8}[A-Za-z]{2,24}(?![A-Za-z0-9-])/g;
 const MAX_TEXT = 2000;
 
 /* Privacy state */
@@ -98,7 +98,8 @@ function readConfig(): AnalyticsConfig | undefined {
 function blocked(config: AnalyticsConfig) {
   return (
     location.protocol !== "https:" ||
-    location.hostname !== config.hostname ||
+    // host includes any port, so the production name on another port does not count.
+    location.host !== config.hostname ||
     navigator.webdriver === true ||
     win.top !== win.self ||
     optedOut() ||
@@ -110,12 +111,31 @@ function blocked(config: AnalyticsConfig) {
 
 const redact = (text: string) => text.slice(0, MAX_TEXT).replace(EMAIL, "[email]");
 
-function redactPath(path: string) {
-  try {
-    return redact(decodeURIComponent(path));
-  } catch {
-    return redact(path);
+/** Fully decode a path segment, so double-encoded addresses are seen too. */
+function decoded(segment: string) {
+  let text = segment;
+  for (let i = 0; i < 3; i++) {
+    try {
+      const next = decodeURIComponent(text);
+      if (next === text) break;
+      text = next;
+    } catch {
+      break;
+    }
   }
+  return text;
+}
+
+/** Replace only segments that hold an email address; every other segment keeps its encoding. */
+function redactPath(path: string) {
+  return path
+    .slice(0, MAX_TEXT)
+    .split("/")
+    .map((segment) => {
+      EMAIL.lastIndex = 0;
+      return EMAIL.test(decoded(segment)) ? "[email]" : segment;
+    })
+    .join("/");
 }
 
 /** Keep only standard campaign tags, drop the fragment, and redact email-like text. */
@@ -137,6 +157,27 @@ function cleanUrl(raw: unknown, keepCampaign: boolean): unknown {
   }
 }
 
+/** The fields Umami 3.4.0 sends for page views, events, and Web Vitals; anything else is dropped. */
+const PAYLOAD_KEYS = [
+  "website",
+  "hostname",
+  "screen",
+  "language",
+  "name",
+  "tag",
+  ...["ttfb", "fcp", "lcp", "cls", "inp", "duration"],
+] as const;
+
+function cleanData(data: unknown): EventData | undefined {
+  if (typeof data !== "object" || data === null) return undefined;
+  const clean: EventData = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (typeof value === "number") clean[key] = value;
+    else if (typeof value === "string") clean[key] = redact(value).slice(0, 200);
+  }
+  return clean;
+}
+
 /**
  * True only while this module calls `umami.track`. Umami runs the hook synchronously inside that
  * call, so any other named event, such as one from a `data-umami-event` attribute, is dropped.
@@ -146,19 +187,21 @@ let sending = false;
 function beforeSend(type: string, payload: Payload): Payload | null {
   if (type === "identify" || optedOut() || privacySignal()) return null;
   if (payload.name !== undefined && !sending) return null;
-  const { id: _id, ...rest } = payload;
-  return {
-    ...rest,
-    url: cleanUrl(payload.url, true),
-    referrer: cleanUrl(payload.referrer, false),
-    ...(typeof payload.title === "string" && { title: redact(payload.title) }),
-  };
+  const clean: Payload = {};
+  for (const key of PAYLOAD_KEYS) if (key in payload) clean[key] = payload[key];
+  clean.url = cleanUrl(payload.url, true);
+  clean.referrer = cleanUrl(payload.referrer, false);
+  if (typeof payload.title === "string") clean.title = redact(payload.title);
+  if (payload.data !== undefined) clean.data = cleanData(payload.data);
+  return clean;
 }
 
 /* Sending: events wait for the tracker, and are dropped if it never loads. */
 
 const queue: [string, EventData][] = [];
 let state: State = "off";
+/** Umami's track function as loaded, so a page script that replaces it cannot borrow our flag. */
+let umamiTrack: Umami["track"] | undefined;
 
 function setState(next: State) {
   state = next;
@@ -170,10 +213,10 @@ function track(name: string, data: EventData) {
   for (const [key, value] of Object.entries(data)) {
     clean[key] = typeof value === "string" ? redact(value).slice(0, 200) : value;
   }
-  if (state === "loaded" && win.umami) {
+  if (state === "loaded" && umamiTrack) {
     sending = true;
     try {
-      void win.umami.track(name, clean).catch(() => {});
+      void umamiTrack(name, clean).catch(() => {});
     } finally {
       sending = false;
     }
@@ -182,14 +225,19 @@ function track(name: string, data: EventData) {
 
 function loadTracker(config: AnalyticsConfig) {
   // Umami looks the hook up by name on every send, so it must not be replaceable.
-  Object.defineProperty(win, HOOK, { value: beforeSend, writable: false, configurable: false });
+  try {
+    Object.defineProperty(win, HOOK, { value: beforeSend, writable: false, configurable: false });
+  } catch {
+    setState("blocked");
+    return false;
+  }
   const script = document.createElement("script");
   script.defer = true;
   script.src = `${config.collector}/script.js`;
   const attributes = {
     "website-id": config.websiteId,
     "host-url": config.collector,
-    domains: config.hostname,
+    domains: location.hostname,
     "do-not-track": "true",
     "exclude-hash": "true",
     performance: "true",
@@ -198,6 +246,7 @@ function loadTracker(config: AnalyticsConfig) {
   for (const [name, value] of Object.entries(attributes))
     script.setAttribute(`data-${name}`, value);
   script.addEventListener("load", () => {
+    umamiTrack = win.umami?.track.bind(win.umami);
     setState("loaded");
     for (const [name, data] of queue.splice(0)) track(name, data);
   });
@@ -207,6 +256,7 @@ function loadTracker(config: AnalyticsConfig) {
   });
   setState("loading");
   document.head.append(script);
+  return true;
 }
 
 /* Interaction events */
@@ -253,33 +303,44 @@ function linkEvent(link: Element): [string, EventData] | undefined {
 function onClick(event: MouseEvent) {
   const target = event.target instanceof Element ? event.target : null;
   if (!target) return;
-  const link = target.closest("a[href], area[href]");
+  const link = target.closest("a, area");
   // A middle click opens a link in a new tab; on anything else it does nothing.
   if (event.type === "auxclick" && (event.button !== 1 || !link)) return;
   const found = declaredEvent(target) ?? (link ? linkEvent(link) : undefined);
   if (found) track(...found);
 }
 
-/** Depth counts only once the visitor scrolls, so a deep link to an anchor reports nothing. */
+/**
+ * Depths the visitor scrolls past themselves. The depth in view when they first scroll is the
+ * baseline, so arriving at an anchor and scrolling back up reports nothing.
+ */
 function watchScroll() {
   const reached = new Set<number>();
-  let engaged = false;
+  let baseline: number | undefined;
   let pending = false;
+  const percent = () => {
+    const { scrollHeight } = document.documentElement;
+    return ((scrollY + innerHeight) / scrollHeight) * 100;
+  };
   const measure = () => {
     pending = false;
-    const { scrollHeight } = document.documentElement;
     // A page that barely scrolls says nothing about reading depth.
-    if (!engaged || scrollHeight <= innerHeight * 1.2) return;
-    const percent = ((scrollY + innerHeight) / scrollHeight) * 100;
+    if (baseline === undefined || document.documentElement.scrollHeight <= innerHeight * 1.2) {
+      return;
+    }
+    const now = percent();
     for (const depth of SCROLL_DEPTHS) {
-      if (percent >= Math.min(depth, 98) && !reached.has(depth)) {
+      if (depth > baseline && now >= Math.min(depth, 98) && !reached.has(depth)) {
         reached.add(depth);
         track("scroll-depth", { depth });
       }
     }
   };
-  for (const type of ["wheel", "touchmove", "keydown", "pointerdown"]) {
-    addEventListener(type, () => (engaged = true), { passive: true, capture: true });
+  const engage = () => {
+    baseline ??= percent();
+  };
+  for (const type of ["wheel", "touchstart", "keydown", "pointerdown"]) {
+    addEventListener(type, engage, { passive: true, capture: true });
   }
   addEventListener(
     "scroll",
@@ -318,13 +379,26 @@ function watchEngagement() {
 
 /* The opt-out control on a privacy page works whether or not tracking is running. */
 
-function statusText(saved: boolean): string {
+/** Whether the opt-out can be read here at all; this never writes to storage. */
+function storageReadable() {
+  try {
+    storage()?.getItem(OPT_OUT_KEY);
+    return storage() !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+const UNSAVED =
+  "Your browser did not let this site save that choice. Turn on Global Privacy Control or block the analytics service instead.";
+
+function statusText(readable: boolean): string {
   const signal = privacySignal();
   if (signal) {
     const name = signal === "gpc" ? "Global Privacy Control" : "Do Not Track";
     return `Your browser sends ${name}, so this site does not count your visits.`;
   }
-  if (!saved) {
+  if (!readable) {
     return "Your browser blocks site storage, so this choice cannot be saved here. Turn on Global Privacy Control or block the analytics service instead.";
   }
   return optedOut()
@@ -332,28 +406,16 @@ function statusText(saved: boolean): string {
     : "This site counts your visits in this browser.";
 }
 
-function canStore() {
-  const store = storage();
-  if (!store) return false;
-  try {
-    store.setItem("site-analytics.test", "1");
-    store.removeItem("site-analytics.test");
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function describeControls() {
-  const saved = canStore();
+function describeControls(message?: string) {
+  const readable = storageReadable();
   for (const control of document.querySelectorAll<HTMLElement>("[data-analytics-opt-out]")) {
     const button = control.querySelector("button");
     const status = control.querySelector("[data-analytics-status]");
     if (button) {
-      button.disabled = !saved;
+      button.disabled = !readable;
       button.textContent = optedOut() ? "Resume counting my visits" : "Stop counting my visits";
     }
-    if (status) status.textContent = statusText(saved);
+    if (status) status.textContent = message ?? statusText(readable);
     control.hidden = false;
   }
 }
@@ -362,10 +424,11 @@ function toggleOptOut() {
   try {
     if (optedOut()) storage()?.removeItem(OPT_OUT_KEY);
     else storage()?.setItem(OPT_OUT_KEY, "1");
+    describeControls();
   } catch {
-    // describeControls reports that the choice cannot be saved.
+    // A full storage quota, for example: nothing changed, and the visitor should know.
+    describeControls(UNSAVED);
   }
-  describeControls();
 }
 
 function wireOptOut() {
@@ -385,7 +448,7 @@ function startTracking() {
     setState("blocked");
     return;
   }
-  loadTracker(config);
+  if (!loadTracker(config)) return;
   document.addEventListener("click", onClick, true);
   document.addEventListener("auxclick", onClick, true);
   watchScroll();

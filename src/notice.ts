@@ -102,7 +102,7 @@ export function privacyNotice(options: NoticeOptions): string {
 <p><button type="button">Stop counting my visits</button></p>
 <p>This choice applies to this website in this browser, and is saved in your browser's local storage.</p>
 </div>
-<p>To honor that choice, the script reads that one local-storage entry before it loads; it writes it only when you use the button.</p>
+<p>To honor that choice, the script reads that one local-storage entry; it writes to local storage only when you use the button.</p>
 
 <h2 id="basis">Why, and on what basis</h2>
 <p>The purpose is to understand readership and keep the site fast and useful. Under the EU and UK GDPR, the legal basis is my legitimate interest in running the site (Article 6(1)(f)), which you can object to at any time with the choices above.</p>

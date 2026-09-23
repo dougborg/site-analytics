@@ -74,6 +74,40 @@ test("redacts email addresses in page paths and titles", async ({ page }) => {
   expect(view.payload.title).toBe("Alice [email]");
 });
 
+test("redacts only path segments holding an address and keeps other encodings", async ({
+  page,
+}) => {
+  const { sent } = await collector(page);
+  await page.goto("/");
+  await loaded(sent);
+  await page.evaluate(() =>
+    history.pushState({}, "", "/package/react@18.2.0/a%2Fb/100%25off/al%2540ex.com/x"),
+  );
+  await expect.poll(() => pageviews(sent).length).toBe(2);
+  expect(pageviews(sent)[1].payload.url).toBe(
+    "https://127.0.0.1:4175/package/react@18.2.0/a%2Fb/100%25off/[email]/x",
+  );
+});
+
+test("sends only Umami's own payload fields, with event data redacted", async ({ page }) => {
+  const { sent } = await collector(page);
+  await page.goto("/");
+  await loaded(sent);
+  await page.evaluate(() => {
+    const umami = (window as unknown as { umami: { track(p: object): Promise<void> } }).umami;
+    return umami.track({
+      website: "00000000-0000-4000-8000-000000000000",
+      url: "/x",
+      data: { email: "bob@example.com", n: 1 },
+      extra: "carol@example.com",
+    });
+  });
+  await expect.poll(() => pageviews(sent).length).toBe(2);
+  const payload = pageviews(sent)[1].payload;
+  expect(payload).not.toHaveProperty("extra");
+  expect(payload.data).toEqual({ email: "[email]", n: 1 });
+});
+
 test("a same-site referrer keeps Umami's relative shape without its query", async ({ page }) => {
   const { sent } = await collector(page);
   await page.goto("/", { referer: "https://127.0.0.1:4175/privacy/?tab=2#x" });
@@ -88,12 +122,12 @@ test("records link and control clicks without link text or addresses", async ({ 
   for (const id of ["outbound", "readme", "download", "download-attr", "email", "internal"]) {
     await page.click(`#${id}`);
   }
-  for (const id of ["declared", "leaky", "svg-link"]) await page.click(`#${id}`);
+  for (const id of ["declared", "leaky", "svg-link", "svg-xlink"]) await page.click(`#${id}`);
   // Image-map areas are not clickable targets for Playwright; dispatch the click it would fire.
   await page.locator("#area").dispatchEvent("click");
   await page.click("#outbound", { button: "middle" });
   await page.click("#declared", { button: "middle" });
-  await expect.poll(() => events(sent).length).toBe(10);
+  await expect.poll(() => events(sent).length).toBe(11);
   expect(events(sent)).toEqual([
     ["outbound-click", { url: "https://example.org/path" }],
     ["outbound-click", { url: "https://github.com/x/y/blob/main/README.md" }],
@@ -103,6 +137,7 @@ test("records link and control clicks without link text or addresses", async ({ 
     ["theme-toggle", { theme: "dark" }],
     ["note", { who: "[email]" }],
     ["outbound-click", { url: "https://example.net/svg" }],
+    ["outbound-click", { url: "https://example.net/xlink" }],
     ["outbound-click", { url: "https://example.com/area" }],
     ["outbound-click", { url: "https://example.org/path" }],
   ]);
@@ -124,10 +159,13 @@ test("counts scroll depth only after the visitor scrolls, once per depth", async
   await page.setViewportSize({ width: 800, height: 600 });
   await page.goto("/#end");
   await loaded(sent);
+  await page.mouse.move(400, 300);
+  await page.mouse.wheel(0, -300);
   await page.waitForTimeout(300);
   expect(events(sent)).toEqual([]);
 
-  await page.evaluate(() => scrollTo(0, 0));
+  await page.goto("/");
+  await expect.poll(() => pageviews(sent).length).toBe(2);
   await page.mouse.move(400, 300);
   for (let i = 0; i < 12; i++) {
     await page.mouse.wheel(0, 500);
@@ -259,6 +297,9 @@ test("does not load the tracker for automation or another hostname", async ({ pa
 
   await page.goto("https://localhost:4175/");
   await expect.poll(() => state(page)).toBe("blocked");
+  // The configured host has no port, so the same name on another port does not count.
+  await page.goto("/without-port");
+  await expect.poll(() => state(page)).toBe("blocked");
   expect(automated.requested).toEqual([]);
 });
 
@@ -287,6 +328,24 @@ test("opt-out controls toggle counting and stay in sync", async ({ page }) => {
   expect(await page.evaluate(() => localStorage.getItem("umami.disabled"))).toBe("1");
   await page.getByRole("button", { name: "Resume counting my visits" }).last().click();
   expect(await page.evaluate(() => localStorage.getItem("umami.disabled"))).toBeNull();
+});
+
+test("the opt-out says so when a choice cannot be saved, without disabling resume", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("umami.disabled", "1");
+    Storage.prototype.setItem = () => {
+      throw new DOMException("full", "QuotaExceededError");
+    };
+  });
+  await page.goto("/privacy/");
+  const resume = page.getByRole("button", { name: "Resume counting my visits" }).first();
+  await expect(resume).toBeEnabled();
+  await resume.click();
+  expect(await page.evaluate(() => localStorage.getItem("umami.disabled"))).toBeNull();
+  await page.getByRole("button", { name: "Stop counting my visits" }).first().click();
+  await expect(page.getByRole("status").first()).toContainText("did not let this site save");
 });
 
 test("the opt-out explains when storage is blocked or a browser signal applies", async ({

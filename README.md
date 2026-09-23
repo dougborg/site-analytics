@@ -18,8 +18,9 @@ It is built for [resume.dougborg.org](https://resume.dougborg.org/) and [dougbor
 | `contact-click` | A `mailto:` or `tel:` link | `method`: `email` or `phone`, never the address |
 | Declared | A click inside `data-analytics-event="name"` | Each `data-analytics-<key>` attribute, at most 200 characters |
 
-Anything that looks like an email address in a URL path, title, or event value becomes `[email]`, and campaign values containing `@` or longer than 100 characters are dropped.
-Umami's own `data-umami-event` attributes are ignored: those events are dropped before sending, so do not use them.
+Anything that looks like an email address becomes `[email]`: a whole path segment that holds one (other segments keep their encoding), or the address inside a title or event value.
+Campaign values containing `@` or longer than 100 characters are dropped, and payload fields outside Umami's own set are removed.
+Do not use Umami's own `data-umami-event` attributes: those events are dropped before sending, and Umami still takes over the click, which breaks a link's `download` attribute.
 
 Umami's server combines the IP address and user agent with a server key and the current month to derive a session ID that is stable for the calendar month, plus an hourly visit ID, and derives coarse location and browser, OS, and device type; it stores those derived values but not the raw IP or user agent.
 Session IDs differ between website IDs, but one server holds them all.
@@ -28,9 +29,9 @@ Nothing loads, and nothing is sent, when any of these hold:
 
 - the browser sends Global Privacy Control or Do Not Track;
 - the visitor opted out on the site's privacy page (Umami's `umami.disabled` local-storage flag);
-- the page is not served over HTTPS from the configured production hostname;
+- the page is not served over HTTPS from the configured production host, on its default port;
 - the page is framed, prerendered and not yet shown, or the browser reports automation (`navigator.webdriver`);
-- the config element is missing, duplicated, not a `script type="application/json"`, or invalid (the module rechecks the website ID and the HTTPS collector origin, so page markup cannot redirect it).
+- the config element is missing, duplicated, not a `script type="application/json"`, or invalid; the module rechecks the website ID and the HTTPS collector origin, so markup that cannot create `<script>` elements cannot redirect it.
 
 It never calls `umami.identify`, drops any identify payload, and strips any distinct ID.
 It sets no cookies, and it reads local storage only for the opt-out flag.
@@ -66,7 +67,8 @@ Copy `@dougborg/site-analytics/analytics.js` to your assets, or let a bundler im
 `configElement` validates the config and throws on a bad website ID, a non-HTTPS collector, or a malformed hostname.
 Omit the config element to turn tracking off while keeping the opt-out control working.
 
-With a Content Security Policy, allow the collector in both `script-src` and `connect-src`, and allow the module itself (Astro may inline it, which needs a hash or nonce).
+A page that can be made to contain an attacker's `<script type="application/json" id="site-analytics">` can point the module at another collector, so treat any such injection as the script injection it is.
+A Content Security Policy is the backstop: allow only your collector in `script-src` and `connect-src`, plus the module itself (Astro may inline it, which needs a hash or nonce).
 
 ### Privacy notice
 

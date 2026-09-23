@@ -33,7 +33,8 @@ const config = (overrides: Record<string, string> = {}) =>
   JSON.stringify({
     websiteId: "00000000-0000-4000-8000-000000000000",
     collector: "https://stats.example.test",
-    hostname: "127.0.0.1",
+    // The fixture's port is part of the host; production hosts have none.
+    hostname: "127.0.0.1:4175",
     ...overrides,
   });
 
@@ -62,6 +63,7 @@ const links = `<h1>Fixture</h1>
 <p><button id="declared" data-analytics-event="theme-toggle" data-analytics-theme="dark">Declared</button></p>
 <p><button id="leaky" data-analytics-event="note" data-analytics-who="bob@example.com">Leaky</button></p>
 <p><svg width="40" height="20"><a id="svg-link" href="https://example.net/svg"><text x="0" y="15">SVG</text></a></svg></p>
+<p><svg width="40" height="20" xmlns:xlink="http://www.w3.org/1999/xlink"><a id="svg-xlink" xlink:href="https://example.net/xlink"><text x="0" y="15">XL</text></a></svg></p>
 <p><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" usemap="#map" width="20" height="20" alt="">
 <map name="map"><area id="area" shape="rect" coords="0,0,20,20" href="https://example.com/area" alt="Area"></map></p>
 <p><a id="umami-event" href="/other" data-umami-event="umami-own" data-umami-event-email="bob@example.com">Umami's own</a></p>
@@ -101,6 +103,13 @@ const pages: Record<string, Page> = {
       "Double",
       "<h1>Double</h1>",
       `${configTag()}\n${MODULE}\n${MODULE.replace(".js", ".js?copy")}`,
+    ),
+  ),
+  "/without-port": html(
+    layout(
+      "Without port",
+      "<h1>Port</h1>",
+      `${configTag(config({ hostname: "127.0.0.1" }))}\n${MODULE}`,
     ),
   ),
   "/spoofed": html(
