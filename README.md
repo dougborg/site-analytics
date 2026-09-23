@@ -1,7 +1,7 @@
 # @dougborg/site-analytics
 
 Privacy-respecting [Umami](https://umami.is/) analytics for static sites.
-It loads Umami's own tracker only when the visitor has not opted out, cleans every payload, adds a fixed set of interaction events, and ships the privacy notice that describes exactly that.
+It loads Umami's own tracker only when the visitor has not opted out, cleans every payload, sends only the events in a shared, typed collection contract, and ships the privacy notice that lists exactly that contract.
 
 It is built for [resume.dougborg.org](https://resume.dougborg.org/) and [dougborg.org](https://dougborg.org/), both counted by a self-hosted Umami at `stats.dougborg.net`.
 It supports the Umami version that collector runs, 3.4.0; see [Compatibility](#compatibility).
@@ -15,12 +15,15 @@ It supports the Umami version that collector runs, 3.4.0; see [Compatibility](#c
 | `scroll-depth` | The first time the visitor, after scrolling themselves, reaches 25, 50, 75, or 100 percent of a page that scrolls | `depth` |
 | `engaged-time` | Each time the page is hidden or left | `seconds` visible since the last report, at most 3600; their sum is the page's total |
 | `outbound-click` | A click or middle click on a link or image-map area to another origin | `url`: origin and path only |
-| `download-click` | A link with `download`, or a same-origin link to a `pdf`, `docx`, `md`, `json`, `zip`, `csv`, `txt`, or `epub` file | `format`, `file` name |
+| `download-click` | A link with `download`, or a same-origin link to a `pdf`, `docx`, `md`, `json`, `zip`, `csv`, `txt`, or `epub` file | `format`: one of those types, or `file` for any other; `file` name |
 | `contact-click` | A `mailto:` or `tel:` link | `method`: `email` or `phone`, never the address |
-| Declared | A click inside `data-analytics-event="name"` | Each `data-analytics-<key>` attribute, at most 200 characters |
+| `theme-toggle` | A click inside a control the site declared as its theme switch | `theme`: `light`, `dark`, or `system` |
+
+The events and fields in this table are the collection contract, exported as `COLLECTION` (`BUILT_IN_EVENTS` plus `DECLARED_EVENTS`) from `src/contract.ts`.
+The browser module drops any event that is not in it with exactly its fields and allowed values, and tests fail if this table, the privacy notice, or the contract list different events.
 
 Anything that looks like an email address becomes `[email]`: a whole path segment that holds one (other segments keep their encoding), or the address inside a title or event value.
-Campaign values containing `@` or longer than 100 characters are dropped, and payload fields outside Umami's own set are removed.
+Campaign values containing `@` or longer than 100 characters are dropped, payload fields outside `PAYLOAD_FIELDS` are removed, and only the contract's events carry data.
 Do not use Umami's own `data-umami-event` attributes: those events are dropped before sending, and Umami still takes over the click, which breaks a link's `download` attribute.
 
 Umami's server combines the IP address and user agent with a server key and the current month to derive a session ID that is stable for the calendar month, plus an hourly visit ID, and derives coarse location and browser, OS, and device type; it stores those derived values but not the raw IP or user agent.
@@ -73,6 +76,22 @@ Omit the config element to turn tracking off while keeping the opt-out control w
 
 A page that can be made to contain an attacker's `<script type="application/json" id="site-analytics">` can point the module at another collector, so treat any such injection as the script injection it is.
 A Content Security Policy is the backstop: allow only your collector in `script-src` and `connect-src`, plus the module itself (Astro may inline it, which needs a hash or nonce).
+
+### Declared events
+
+A site may send only the declared events in `DECLARED_EVENTS`, today just `theme-toggle`.
+Generate the control's attributes so that a name, field, or value outside the contract fails the build:
+
+```ts
+import { declaredEventAttributes } from "@dougborg/site-analytics";
+
+declaredEventAttributes("theme-toggle", { theme: "dark" });
+// data-analytics-event="theme-toggle" data-analytics-theme="dark"
+```
+
+A click inside the control sends the event.
+The module ignores a declared event whose name, fields, or values are not exactly in the contract; a link inside such a control still counts as the link it is.
+A new declared event, field, or value is a change to this package, never to a site: see [Releases](#releases).
 
 ### Privacy notice
 
@@ -138,7 +157,8 @@ The module is ES2024; a browser too old to run it collects nothing, and the page
 ## Releases
 
 Versions follow [Conventional Commits](https://www.conventionalcommits.org/) through release-please.
-Adding an event, a payload field, or anything else that widens collection is `feat` and must update the notice in the same change; removing or renaming an export is `feat!`.
+Adding an event, a field, an allowed value, or anything else that widens collection changes `src/contract.ts`; it is `feat`, needs a privacy review, and updates the README table in the same change (the notice follows the contract).
+Removing or renaming an export or an event is `feat!`.
 Merging the release PR tags the version, and `.github/workflows/release.yml` builds, tests, and stages it on npm as a trusted publisher with provenance.
 Packing refuses to run without a built `dist/`, so the published files are the ones the release job tested.
 The owner approves each staged version with 2FA before it goes live.

@@ -46,7 +46,7 @@
     "node": "26.8.2"
   },
   "scripts": {
-    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && node scripts/inline-contract.ts",
     "prepack": "node -e \"if (!require('fs').existsSync('dist/analytics.js')) { console.error('Run pnpm build before packing.'); process.exit(1) }\"",
     "check": "pnpm lint && pnpm typecheck && pnpm check:unused && pnpm test",
     "lint": "biome check . && rumdl check .",
@@ -69,11 +69,13 @@
     "entry": [
       "src/index.ts",
       "src/analytics.ts",
-      "test/**/*.ts"
+      "test/**/*.ts",
+      "scripts/*.ts"
     ],
     "project": [
       "src/**/*.ts",
-      "test/**/*.ts"
+      "test/**/*.ts",
+      "scripts/**/*.ts"
     ],
     "ignoreBinaries": [
       "openssl"

@@ -1,7 +1,10 @@
 /**
  * The privacy notice for a site that uses this package. It describes exactly what the browser
- * module and the pinned Umami release collect, so it changes whenever either does.
+ * module and the supported Umami release collect, and lists every event in the collection
+ * contract, so it changes whenever either does.
  */
+import { COLLECTION, type Field } from "./contract.ts";
+
 export interface NoticeOptions {
   /** The site's hostname, as visitors see it. */
   site: string;
@@ -36,6 +39,38 @@ function formatDate(iso: string) {
     year: "numeric",
     timeZone: "UTC",
   });
+}
+
+/** "a, b, or c" */
+function series(items: readonly string[]) {
+  if (items.length < 3) return items.join(" or ");
+  return `${items.slice(0, -1).join(", ")}, or ${items.at(-1)}`;
+}
+
+function range(field: Field) {
+  switch (field.kind) {
+    case "choice":
+      return ` (${series(field.values.map((value) => `<code>${escapeHtml(value)}</code>`))})`;
+    case "number":
+      return ` (${series(field.values.map(String))})`;
+    case "whole":
+      return ` (a whole number from ${field.min} to ${field.max})`;
+    default:
+      return "";
+  }
+}
+
+/** One list item per event in the collection contract, naming every field it carries. */
+function eventList() {
+  return Object.entries(COLLECTION)
+    .map(([name, { when, fields }]) => {
+      const data = Object.entries(fields).map(
+        ([key, field]) =>
+          `<code>${escapeHtml(key)}</code>: ${escapeHtml(field.meaning)}${range(field)}`,
+      );
+      return `<li><code>${escapeHtml(name)}</code>, sent ${escapeHtml(when)}, with ${data.join("; and ")}.</li>`;
+    })
+    .join("\n");
 }
 
 function httpsUrl(value: string, field: string) {
@@ -82,8 +117,11 @@ export function privacyNotice(options: NoticeOptions): string {
 <li>the page address and title, and the address of the page that linked you here. Fragments and query parameters are removed, except the standard campaign tags <code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, <code>utm_content</code>, and <code>utm_term</code> on the page address, and anything that looks like an email address is replaced;</li>
 <li>your screen size and browser language;</li>
 <li>how quickly the page loaded and responded (the Web Vitals measures TTFB, FCP, LCP, CLS, and INP);</li>
-<li>how far down the page you scroll (25, 50, 75, and 100 percent) and how many seconds the page was visible;</li>
-<li>clicks on links that leave the site, file downloads, and email or phone links, and on a few named controls such as a theme switch, with the choice made. Only the destination or the control's name is recorded: never the text of an email address, anything you type, or where on the page you clicked.</li>
+<li>these named events, and no others, each with only the data listed:
+<ul id="events">
+${eventList()}
+</ul>
+Never the text of a link or an email address, anything you type, or where on the page you clicked.</li>
 </ul>
 <p>Like any website, the service receives your IP address and browser user agent with each request. It combines them with a key kept on the server and the current month to derive an identifier that stays the same for that calendar month, so your visits to ${site} within a month can be grouped together, and a shorter one that groups a single visit. It also works out your approximate location (country, region, and city) and your browser, operating system, and device type. It stores those derived values but not your IP address or user agent.</p>
 

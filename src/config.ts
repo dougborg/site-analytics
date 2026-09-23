@@ -1,3 +1,10 @@
+import {
+  allowedEvent,
+  type ChoiceField,
+  DECLARED_EVENTS,
+  type DeclaredEventName,
+} from "./contract.ts";
+
 /** Build-time configuration for one site. Everything here is public: it ships in the page. */
 export interface AnalyticsConfig {
   /** The site's own Umami website ID; never share one between sites. */
@@ -40,4 +47,30 @@ export function analyticsConfig(input: AnalyticsConfig): AnalyticsConfig {
 export function configElement(config: AnalyticsConfig): string {
   const json = JSON.stringify(analyticsConfig(config)).replaceAll("<", "\\u003c");
   return `<script type="application/json" id="site-analytics">${json}</script>`;
+}
+
+/** The fields of a declared event, each limited to its allowed values. */
+export type DeclaredEventData<N extends DeclaredEventName> = {
+  -readonly [F in keyof (typeof DECLARED_EVENTS)[N]["fields"]]: (typeof DECLARED_EVENTS)[N]["fields"][F] extends ChoiceField
+    ? (typeof DECLARED_EVENTS)[N]["fields"][F]["values"][number]
+    : never;
+};
+
+/**
+ * The attributes that declare an event on a control, such as
+ * `data-analytics-event="theme-toggle" data-analytics-theme="dark"`. Throws for anything the
+ * collection contract does not allow, so a site cannot build markup the module would drop.
+ */
+export function declaredEventAttributes<N extends DeclaredEventName>(
+  name: N,
+  data: DeclaredEventData<N>,
+): string {
+  const fields = data as Record<string, string>;
+  if (!Object.hasOwn(DECLARED_EVENTS, name) || !allowedEvent(name, fields)) {
+    throw new Error(`Not an allowed declared event: ${JSON.stringify({ name, data })}`);
+  }
+  const attributes = Object.entries(fields).map(
+    ([key, value]) => `data-analytics-${key}="${value}"`,
+  );
+  return [`data-analytics-event="${name}"`, ...attributes].join(" ");
 }

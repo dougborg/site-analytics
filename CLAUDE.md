@@ -18,7 +18,10 @@ Run `actionlint` after editing workflows.
 
 ## Invariants
 
-- The README table, `src/notice.ts`, and `src/analytics.ts` describe the same collection; change all three together and cover the change in tests.
+- `src/contract.ts` is the collection contract: every named event, field, and allowed value; the browser module drops anything outside it.
+  The README table, the notice's event list (generated from it), and the contract must agree, and `test/contract.test.ts` fails when they do not; change them together.
+- Declared events take only fixed choices; a new event, field, or value needs a privacy review, and `test/contract.test.ts` rejects names and values that could carry personal data.
+- `src/contract.ts` has no imports: `scripts/inline-contract.ts` inlines it so the published `dist/analytics.js` stays one self-contained file.
 - Widening collection is `feat`; removing or renaming an export or event is `feat!`.
 - Never collect typed input, link text, email addresses, element classes, or click positions, and never call `umami.identify`.
 - Global Privacy Control, Do Not Track, the opt-out flag, non-HTTPS pages, other hostnames, frames, prerendering, automation, and a missing or invalid config prevent the tracker from loading at all.
