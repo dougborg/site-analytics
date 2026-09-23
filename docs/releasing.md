@@ -12,7 +12,7 @@ Every step marked **Operator** needs the npm account owner, a browser session on
 | Tags | `v0.1.0` (pre-bootstrap, never published) and `v0.2.0`, both protected by the `Protect release tags` ruleset |
 | GitHub Releases | `v0.2.0` only |
 | Trusted publisher | Not yet verified: steps 1 to 3 |
-| Next version | Whatever the open release-please PR proposes; it must be the first staged, provenance-attested release |
+| Next version | `0.3.0`, proposed by release-please in #11; it must be the first staged, provenance-attested release |
 
 `v0.1.0` has no Release and no npm version.
 It stays because the tag ruleset forbids deleting it, and it predates every artifact consumers can install.
@@ -67,7 +67,8 @@ Renaming `release.yml` or the environment breaks publishing until the trusted pu
 
 ## 2. Stage a release through the workflow
 
-1. Merge the open release-please PR (`chore(release): release X.Y.Z`) after reading its changelog.
+1. Merge the open release-please PR (`chore(release): release X.Y.Z`) after reading its changelog and seeing the required `check` and `Conventional PR title` pass on its head.
+   The workflow opens that PR with `GITHUB_TOKEN`, which starts no other workflows, so those checks do not run by themselves: close and reopen the PR, which runs them, and never bypass them.
    release-please creates tag `vX.Y.Z` and its GitHub Release in the `release-please` job.
 2. The `publish` job checks out the tag, installs without a cache, builds, runs `pnpm check` and all three browser engines, and runs `npm stage publish . --provenance --access public`.
    If a step fails after the tag exists, fix the cause and rerun the failed job (`gh run rerun <run-id> --failed`); it rebuilds the same tag.
