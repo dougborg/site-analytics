@@ -16,3 +16,4 @@ Fixes ship as a new release, and the advisory is published once a fixed version 
 Releases are built and published from GitHub Actions with npm provenance, so each version on npm links to the exact commit and workflow that built it.
 The workflow can only stage a release; the maintainer approves each version with two-factor authentication before it goes live.
 Verify a downloaded package with `npm audit signatures`.
+Version `0.2.0` was the one-time manual bootstrap publish and has no provenance attestation; it reproduces byte for byte from tag `v0.2.0` (see [Releasing](docs/releasing.md)).

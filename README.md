@@ -162,6 +162,12 @@ Removing or renaming an export or an event is `feat!`.
 Merging the release PR tags the version, and `.github/workflows/release.yml` builds, tests, and stages it on npm as a trusted publisher with provenance.
 Packing refuses to run without a built `dist/`, so the published files are the ones the release job tested.
 The owner approves each staged version with 2FA before it goes live.
+`0.2.0`, the bootstrap publish, is the one version without provenance; [Releasing](docs/releasing.md) is the operator runbook, including that exception and how to verify a staged release end to end.
+
+## Consumers
+
+Each site pins an exact version, uses its own Umami website ID for its own origin, and reviews any release that widens collection before upgrading.
+[Consumers](docs/consumers.md) holds the upgrade rule and the matrix of sites, origins, website IDs, and pinned versions.
 
 ## License
 
