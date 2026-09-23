@@ -64,6 +64,90 @@ test("sends only Umami's own payload fields, and no data on page views", async (
   const payload = pageviews(sent)[1].payload;
   expect(payload).not.toHaveProperty("extra");
   expect(payload).not.toHaveProperty("data");
+  // The page's own address, title, and referrer, never the caller's.
+  expect(payload.url).toBe("https://127.0.0.1:4175/");
+  expect(payload.title).toBe("Fixture home");
+  expect(payload.referrer).toBe(pageviews(sent)[0].payload.referrer);
+});
+
+type Track = { track(p: object | ((p: object) => object)): Promise<void> };
+
+test("a page script cannot put its own values in a page view", async ({ page, collector }) => {
+  const { sent } = await collector();
+  await page.goto("/");
+  await loaded(sent);
+  await page.evaluate(async () => {
+    const { umami } = window as unknown as { umami: Track };
+    const spoof = {
+      website: "00000000-0000-4000-8000-000000000000",
+      url: "/exfil/SECRET-COOKIE-VALUE-1234567890",
+      referrer: "/also/another-secret-blob-xyz",
+      title: "leaked-session-token=abcdef0123456789 not-an-email-at-all",
+      hostname: "SECRET-host.example",
+      language: "SECRET-language",
+      screen: "SECRET-screen",
+      tag: "SECRET-tag",
+      id: "SECRET-id",
+      ttfb: 1234,
+    };
+    await umami.track(spoof);
+    await umami.track((props) => ({ ...props, ...spoof }));
+    // Another website ID is not this site's page view at all.
+    await umami.track({ ...spoof, website: "11111111-1111-4111-8111-111111111111" });
+  });
+  await expect.poll(() => pageviews(sent).length).toBe(3);
+  await page.waitForTimeout(300);
+  expect(pageviews(sent)).toHaveLength(3);
+  expect(JSON.stringify(sent)).not.toMatch(/SECRET|exfil|another-secret|leaked-session/);
+  const [real, ...spoofed] = pageviews(sent);
+  for (const view of spoofed) {
+    expect(view.payload).toEqual(real.payload);
+    expect(view.payload).not.toHaveProperty("ttfb");
+    expect(view.payload).not.toHaveProperty("tag");
+  }
+});
+
+test("history navigations report the page's own address and the previous one as referrer", async ({
+  page,
+  collector,
+}) => {
+  const { sent } = await collector();
+  await page.goto("/?utm_source=a&q=1", { referer: "https://news.example/" });
+  await loaded(sent);
+  await page.evaluate(() => {
+    document.title = "Other page";
+    history.pushState({}, "", "/other?utm_medium=b&token=abc#x");
+  });
+  await expect.poll(() => pageviews(sent).length).toBe(2);
+  await page.evaluate(() => history.pushState({}, "", "/third/"));
+  await expect.poll(() => pageviews(sent).length).toBe(3);
+  await page.evaluate(() =>
+    (window as unknown as { umami: Track }).umami.track({
+      website: "00000000-0000-4000-8000-000000000000",
+      url: "/exfil",
+      referrer: "/exfil-referrer",
+    }),
+  );
+  await page.click("#outbound");
+  await expect.poll(() => pageviews(sent).length).toBe(4);
+  await expect.poll(() => events(sent).length).toBe(1);
+  const views = pageviews(sent).map(({ payload: { url, referrer, title } }) => ({
+    url,
+    referrer,
+    title,
+  }));
+  expect(views).toEqual([
+    {
+      url: "https://127.0.0.1:4175/?utm_source=a",
+      referrer: "https://news.example/",
+      title: "Fixture home",
+    },
+    { url: "https://127.0.0.1:4175/other?utm_medium=b", referrer: "/", title: "Other page" },
+    { url: "https://127.0.0.1:4175/third/", referrer: "/other", title: "Other page" },
+    // A repeated view of the same address keeps its referrer rather than referring to itself.
+    { url: "https://127.0.0.1:4175/third/", referrer: "/other", title: "Other page" },
+  ]);
+  expect(sent.find((s) => s.payload.name)?.payload.url).toBe("https://127.0.0.1:4175/third/");
 });
 
 test("catches encoded addresses in titles, links, file names, and campaign tags", async ({

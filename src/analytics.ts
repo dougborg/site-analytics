@@ -1,8 +1,9 @@
 /**
- * Browser module: loads Umami's tracker only when the visitor has not opted out, sanitizes every
- * payload, and sends only the events in the collection contract. It never blocks rendering,
- * navigation, or downloads, and the page works the same without it. The build inlines the contract,
- * so the published file is self-contained and sites can copy it without a bundler.
+ * Browser module: loads Umami's tracker only when the visitor has not opted out, rebuilds every
+ * payload from the page itself, and sends only the events in the collection contract. It never
+ * blocks rendering, navigation, or downloads, and the page works the same without it. The build
+ * inlines the contract, so the published file is self-contained and sites can copy it without a
+ * bundler.
  */
 import type { AnalyticsConfig } from "./config.ts";
 import {
@@ -10,11 +11,14 @@ import {
   DECLARED_EVENTS,
   DOWNLOAD_FORMATS,
   type EventName,
-  PAYLOAD_FIELDS,
+  METRIC_FIELDS,
+  type PAYLOAD_FIELDS,
   SCROLL_DEPTHS,
 } from "./contract.ts";
 
 type Payload = Record<string, unknown>;
+/** What reaches the collector: only the contract's payload fields. */
+type Outgoing = Partial<Record<(typeof PAYLOAD_FIELDS)[number], unknown>>;
 type EventData = Record<string, string | number>;
 type Umami = { track: (name: string, data?: EventData) => Promise<void> };
 type AnalyticsWindow = Window & {
@@ -145,8 +149,8 @@ function redactPath(path: string) {
 }
 
 /** Keep only standard campaign tags, drop the fragment, and redact email-like text. */
-function cleanUrl(raw: unknown, keepCampaign: boolean): unknown {
-  if (typeof raw !== "string" || raw === "") return raw;
+function cleanUrl(raw: string, keepCampaign: boolean): string | undefined {
+  if (raw === "") return raw;
   try {
     const url = new URL(raw, location.href);
     const params = [...url.searchParams].filter(
@@ -166,44 +170,78 @@ function cleanUrl(raw: unknown, keepCampaign: boolean): unknown {
   }
 }
 
-function cleanData(data: unknown): EventData | undefined {
-  if (typeof data !== "object" || data === null) return undefined;
-  const clean: EventData = {};
-  for (const [key, value] of Object.entries(data)) {
-    if (typeof value === "number") clean[key] = value;
-    else if (typeof value === "string") clean[key] = redact(value).slice(0, 200);
+/** Umami's shape for a referrer: a same-origin address loses its origin. */
+function sameSitePath(url: string) {
+  const { origin } = location;
+  return url === origin || url.startsWith(`${origin}/`) ? url.slice(origin.length) || "/" : url;
+}
+
+/* Payloads: built from the page itself, never from what a caller put in them. */
+
+type Page = { url?: string; referrer?: string; title: string };
+
+/** The website ID this module configured Umami with; any other payload is not ours. */
+let websiteId: string | undefined;
+/** The page the last page view described; events and Web Vitals belong to it. */
+let currentPage: Page | undefined;
+/**
+ * The event this module is sending, set only during its own `umami.track` call. Umami runs the
+ * hook synchronously inside that call, so any other named event is dropped, such as one from a
+ * `data-umami-event` attribute or a page script.
+ */
+let outgoing: [EventName, EventData] | undefined;
+
+/**
+ * A page view describes the current address. Like Umami's tracker, its referrer is the linking
+ * page on the first view and the previous page view's address after a history navigation; a
+ * repeated view of the same address keeps the referrer it had.
+ */
+function viewPage(): Page {
+  const url = cleanUrl(location.href, true);
+  let referrer: string | undefined;
+  if (!currentPage) referrer = cleanUrl(sameSitePath(document.referrer), false);
+  else if (url === currentPage.url) referrer = currentPage.referrer;
+  else referrer = currentPage.url && cleanUrl(sameSitePath(currentPage.url), false);
+  // Umami's server decodes titles, so an encoded address must be caught here too.
+  currentPage = { url, referrer, title: redact(decoded(document.title)) };
+  return currentPage;
+}
+
+function pageFields({ url, referrer, title }: Page): Outgoing {
+  return {
+    website: websiteId,
+    hostname: location.hostname,
+    screen: `${screen.width}x${screen.height}`,
+    language: navigator.language,
+    url,
+    referrer,
+    title,
+  };
+}
+
+function metrics(payload: Payload): Outgoing {
+  const clean: Outgoing = {};
+  for (const key of METRIC_FIELDS) {
+    const value = payload[key];
+    if (typeof value === "number" && Number.isFinite(value) && value >= 0) clean[key] = value;
   }
   return clean;
 }
 
 /**
- * True only while this module calls `umami.track`. Umami runs the hook synchronously inside that
- * call, so any other named event, such as one from a `data-umami-event` attribute, is dropped.
+ * Umami's `before-send` hook. It takes from the tracker's payload only what the page cannot
+ * say itself: whether it is a page view, and the Web Vitals it measured.
  */
-let sending = false;
-
-/** Fields that are cleaned rather than copied; undefined drops the field. */
-const CLEANERS: Partial<Record<(typeof PAYLOAD_FIELDS)[number], (value: unknown) => unknown>> = {
-  url: (value) => cleanUrl(value, true),
-  referrer: (value) => cleanUrl(value, false),
-  // Umami's server decodes titles, so an encoded address must be caught here too.
-  title: (value) => (typeof value === "string" ? redact(decoded(value)) : undefined),
-  data: cleanData,
-};
-
-function beforeSend(type: string, payload: Payload): Payload | null {
-  if (type === "identify" || optedOut() || privacySignal()) return null;
-  if (payload.name !== undefined && !sending) return null;
-  const clean: Payload = {};
-  // Only this module's own events carry data, and `track` has checked it against the contract.
-  const fields =
-    payload.name === undefined ? PAYLOAD_FIELDS.filter((key) => key !== "data") : PAYLOAD_FIELDS;
-  for (const key of fields) {
-    if (!(key in payload)) continue;
-    const cleaner = CLEANERS[key];
-    clean[key] = cleaner ? cleaner(payload[key]) : payload[key];
-  }
-  return clean;
+function beforeSend(type: string, payload: Payload): Outgoing | null {
+  if (optedOut() || privacySignal() || !websiteId || payload.website !== websiteId) return null;
+  if (type === "performance")
+    return { ...pageFields(currentPage ?? viewPage()), ...metrics(payload) };
+  // Anything else, including identify, is not something this module sends.
+  if (type !== "event") return null;
+  if (payload.name === undefined) return pageFields(viewPage());
+  if (!outgoing || payload.name !== outgoing[0]) return null;
+  const [name, data] = outgoing;
+  return { ...pageFields(currentPage ?? viewPage()), name, data };
 }
 
 /* Sending: events wait for the tracker, and are dropped if it never loads. */
@@ -226,11 +264,11 @@ function track(name: EventName, data: EventData) {
   }
   if (!allowedEvent(name, clean)) return;
   if (state === "loaded" && umamiTrack) {
-    sending = true;
+    outgoing = [name, clean];
     try {
       void umamiTrack(name, clean).catch(() => {});
     } finally {
-      sending = false;
+      outgoing = undefined;
     }
   } else if (state === "loading" && queue.length < 50) queue.push([name, clean]);
 }
@@ -243,6 +281,7 @@ function loadTracker(config: AnalyticsConfig) {
     setState("blocked");
     return false;
   }
+  websiteId = config.websiteId;
   const script = document.createElement("script");
   script.defer = true;
   script.src = `${config.collector}/script.js`;

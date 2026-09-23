@@ -1,7 +1,7 @@
 # @dougborg/site-analytics
 
 Privacy-respecting [Umami](https://umami.is/) analytics for static sites.
-It loads Umami's own tracker only when the visitor has not opted out, cleans every payload, sends only the events in a shared, typed collection contract, and ships the privacy notice that lists exactly that contract.
+It loads Umami's own tracker only when the visitor has not opted out, builds every payload from the page itself rather than from what callers pass to Umami, sends only the events in a shared, typed collection contract, and ships the privacy notice that lists exactly that contract.
 
 It is built for [resume.dougborg.org](https://resume.dougborg.org/) and [dougborg.org](https://dougborg.org/), both counted by a self-hosted Umami at `stats.dougborg.net`.
 It supports the Umami version that collector runs, 3.4.0; see [Compatibility](#compatibility).
@@ -23,7 +23,11 @@ The events and fields in this table are the collection contract, exported as `CO
 The browser module drops any event that is not in it with exactly its fields and allowed values, and tests fail if this table, the privacy notice, or the contract list different events.
 
 Anything that looks like an email address becomes `[email]`: a whole path segment that holds one (other segments keep their encoding), or the address inside a title or event value.
-Campaign values containing `@` or longer than 100 characters are dropped, payload fields outside `PAYLOAD_FIELDS` are removed, and only the contract's events carry data.
+Campaign values containing `@` or longer than 100 characters are dropped, and only the contract's events carry data.
+The module builds every payload from the fields in `PAYLOAD_FIELDS` alone, and takes their values from the page, not from the payload Umami hands it: the address and title from `location` and `document.title`, the hostname, screen, and language from the browser, and the website ID from the config; a payload for any other website ID is dropped.
+A page view's referrer is `document.referrer` on the first view and the previous page view's address after a history navigation, as in Umami's tracker; events and Web Vitals carry the page of the latest page view.
+From the payload it keeps only whether it is a page view and the Web Vitals numbers the tracker measured.
+So `umami.track()` from a page script, with or without its own `url`, `title`, `referrer`, or other properties, can at most count another view of the current page with its real values; custom page-view properties are not supported.
 Do not use Umami's own `data-umami-event` attributes: those events are dropped before sending, and Umami still takes over the click, which breaks a link's `download` attribute.
 
 Umami's server combines the IP address and user agent with a server key and the current month to derive a session ID that is stable for the calendar month, plus an hourly visit ID, and derives coarse location and browser, OS, and device type; it stores those derived values but not the raw IP or user agent.
@@ -40,7 +44,7 @@ Nothing loads, and nothing is sent, when any of these hold:
 It never calls `umami.identify`, drops any identify payload, and strips any distinct ID.
 It sets no cookies, and it reads local storage only for the opt-out flag.
 Clicks are never delayed: events go out with keepalive requests, at most 50 events wait for the tracker to load, and they are dropped if it never does.
-The `before-send` hook is non-writable, so other scripts cannot remove the cleaning, and loading the module twice starts it once.
+The `before-send` hook is non-writable, so other scripts cannot bypass it, and loading the module twice starts it once.
 The config element's `data-state` attribute reports `blocked`, `loading`, `loaded`, or `failed` for debugging.
 
 ## Use
