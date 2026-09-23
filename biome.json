@@ -1,7 +1,14 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
   "files": {
-    "includes": ["scripts/**/*.ts", "test/**/*.ts", "src/**/*.ts", "*.json", "playwright.config.ts"]
+    "includes": [
+      "scripts/**/*.ts",
+      "test/**/*.ts",
+      "src/**/*.ts",
+      "*.json",
+      "playwright.config.ts",
+      "!test/fixture/umami"
+    ]
   },
   "formatter": {
     "indentStyle": "space",

@@ -30,6 +30,7 @@ const notice = {
   controller: { name: "A <Person>", email: "a@example.com" },
   collector: "https://stats.example.com",
   hosting: "on a server at home",
+  country: "the United States",
   retentionDays: 90,
   updated: "2026-09-22",
 };
@@ -37,7 +38,8 @@ const notice = {
 test("the notice escapes its inputs and states the retention and date", () => {
   const html = privacyNotice(notice);
   assert.match(html, /A &#60;Person&#62;/);
-  assert.match(html, /deleted after 90 days/);
+  assert.match(html, /delete records after 90 days/);
+  assert.match(html, /in the United States/);
   assert.match(html, /<time datetime="2026-09-22">September 22, 2026<\/time>/);
   assert.match(html, /stats\.example\.com/);
   assert.doesNotMatch(html, /Requests reach it through/);
@@ -58,7 +60,26 @@ test("the notice names every interaction event the module sends", () => {
   }
 });
 
-test("the notice rejects a bad date or retention", () => {
-  assert.throws(() => privacyNotice({ ...notice, updated: "Sept 22" }), /YYYY-MM-DD/);
-  assert.throws(() => privacyNotice({ ...notice, retentionDays: 0 }), /positive/);
+test("the notice rejects inputs that would render wrong or unsafe", () => {
+  const cases: [Partial<typeof notice> & Record<string, unknown>, RegExp][] = [
+    [{ updated: "Sept 22" }, /YYYY-MM-DD/],
+    [{ updated: "2026-02-31" }, /YYYY-MM-DD/],
+    [{ retentionDays: 0 }, /whole number/],
+    [{ retentionDays: Number.POSITIVE_INFINITY }, /whole number/],
+    [{ retentionDays: 1.5 }, /whole number/],
+    [{ controller: { name: "A", email: "a@example.com?cc=b@example.com" } }, /plain email/],
+    [{ network: { name: "N", privacyUrl: "javascript:alert(1)" } }, /https URL/],
+    [{ collector: "http://stats.example.com" }, /https URL/],
+    [{ country: " " }, /country must not be empty/],
+  ];
+  for (const [change, error] of cases) {
+    assert.throws(() => privacyNotice({ ...notice, ...change } as typeof notice), error);
+  }
+});
+
+test("the notice is honest about identifiers and linking", () => {
+  const html = privacyNotice(notice);
+  assert.match(html, /stays the same for that calendar month/);
+  assert.match(html, /a promise about how I use the data, not a technical barrier/);
+  assert.doesNotMatch(html, /only thing this site stores/);
 });

@@ -13,5 +13,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["scripts/**/*.ts", "test/**/*.ts", "src/**/*.ts", "playwright.config.ts"]
+  "include": ["scripts/**/*.ts", "test/**/*.ts", "src/**/*.ts", "playwright.config.ts"],
+  "exclude": ["test/fixture/umami/**"]
 }

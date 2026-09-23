@@ -9,27 +9,35 @@ It is built for [resume.dougborg.org](https://resume.dougborg.org/) and [dougbor
 
 | Event | When | Data |
 | --- | --- | --- |
-| Page view | Each page load (Umami) | Path with only `utm_*` parameters kept, title, referrer without query or fragment, screen, language |
-| `performance` | Page load (Umami) | Web Vitals: TTFB, FCP, LCP, CLS, INP |
-| `scroll-depth` | First time the visitor reaches 25, 50, 75, or 100 percent of a page that scrolls | `depth` |
-| `engaged-time` | Once, when the visitor leaves or hides the page | `seconds` visible, at most 3600 |
-| `outbound-click` | A click or middle click on a link to another origin | `url`: origin and path only |
-| `download-click` | A link with `download`, or to a `pdf`, `docx`, `md`, `json`, `zip`, `csv`, `txt`, or `epub` file | `format`, `file` name |
+| Page view | Each page load and history navigation (Umami) | URL keeping only `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, and `utm_term`; title; referrer without query or fragment; screen; language |
+| `performance` | Page load (Umami) | Web Vitals: TTFB, FCP, LCP, CLS, INP (the tracker also sends the time open, which Umami 3.4.0 discards) |
+| `scroll-depth` | The first time the visitor, after scrolling themselves, reaches 25, 50, 75, or 100 percent of a page that scrolls | `depth` |
+| `engaged-time` | Each time the page is hidden or left | `seconds` visible since the last report, at most 3600; their sum is the page's total |
+| `outbound-click` | A click or middle click on a link or image-map area to another origin | `url`: origin and path only |
+| `download-click` | A link with `download`, or a same-origin link to a `pdf`, `docx`, `md`, `json`, `zip`, `csv`, `txt`, or `epub` file | `format`, `file` name |
 | `contact-click` | A `mailto:` or `tel:` link | `method`: `email` or `phone`, never the address |
-| Declared | A click inside `data-analytics-event="name"` | Each `data-analytics-<key>` attribute |
+| Declared | A click inside `data-analytics-event="name"` | Each `data-analytics-<key>` attribute, at most 200 characters |
 
-Umami's server also derives a rotating visit ID, coarse location, and browser, OS, and device type from the IP address and user agent; it stores those derived values but not the raw IP or user agent.
+Anything that looks like an email address becomes `[email]`: a whole path segment that holds one (other segments keep their encoding), or the address inside a title or event value.
+Campaign values containing `@` or longer than 100 characters are dropped, and payload fields outside Umami's own set are removed.
+Do not use Umami's own `data-umami-event` attributes: those events are dropped before sending, and Umami still takes over the click, which breaks a link's `download` attribute.
+
+Umami's server combines the IP address and user agent with a server key and the current month to derive a session ID that is stable for the calendar month, plus an hourly visit ID, and derives coarse location and browser, OS, and device type; it stores those derived values but not the raw IP or user agent.
+Session IDs differ between website IDs, but one server holds them all.
 
 Nothing loads, and nothing is sent, when any of these hold:
 
 - the browser sends Global Privacy Control or Do Not Track;
 - the visitor opted out on the site's privacy page (Umami's `umami.disabled` local-storage flag);
-- the hostname is not the configured production hostname;
-- the page is framed or the browser reports automation (`navigator.webdriver`).
+- the page is not served over HTTPS from the configured production host, on its default port;
+- the page is framed, prerendered and not yet shown, or the browser reports automation (`navigator.webdriver`);
+- the config element is missing, duplicated, not a `script type="application/json"`, or invalid; the module rechecks the website ID and the HTTPS collector origin, so markup that cannot create `<script>` elements cannot redirect it.
 
 It never calls `umami.identify`, drops any identify payload, and strips any distinct ID.
-It sets no cookies.
-Clicks are never delayed: events go out with keepalive requests, and anything queued before the tracker loads is dropped if it never does.
+It sets no cookies, and it reads local storage only for the opt-out flag.
+Clicks are never delayed: events go out with keepalive requests, at most 50 events wait for the tracker to load, and they are dropped if it never does.
+The `before-send` hook is non-writable, so other scripts cannot remove the cleaning, and loading the module twice starts it once.
+The config element's `data-state` attribute reports `blocked`, `loading`, `loaded`, or `failed` for debugging.
 
 ## Use
 
@@ -59,6 +67,9 @@ Copy `@dougborg/site-analytics/analytics.js` to your assets, or let a bundler im
 `configElement` validates the config and throws on a bad website ID, a non-HTTPS collector, or a malformed hostname.
 Omit the config element to turn tracking off while keeping the opt-out control working.
 
+A page that can be made to contain an attacker's `<script type="application/json" id="site-analytics">` can point the module at another collector, so treat any such injection as the script injection it is.
+A Content Security Policy is the backstop: allow only your collector in `script-src` and `connect-src`, plus the module itself (Astro may inline it, which needs a hash or nonce).
+
 ### Privacy notice
 
 Every tracked site needs a privacy page that links from each tracked page and loads the module, so its opt-out button works:
@@ -70,7 +81,8 @@ const html = privacyNotice({
   site: "example.com",
   controller: { name: "Your Name", email: "you@example.com" },
   collector: "https://stats.example.com",
-  hosting: "on a server I run at home in Colorado, USA",
+  hosting: "on a server I run at home in Colorado",
+  country: "the United States",
   network: { name: "Cloudflare", privacyUrl: "https://www.cloudflare.com/privacypolicy/" },
   retentionDays: 90,
   updated: "2026-09-22",
@@ -80,6 +92,8 @@ const html = privacyNotice({
 It returns the notice body as HTML with `<h2>` sections for the page's own layout.
 The opt-out control is hidden until the module runs, because it cannot work without JavaScript.
 The notice describes this package's events, so a release that changes what is collected also changes the notice, and consumers should republish their privacy page with a new `updated` date.
+The notice promises that records are deleted after `retentionDays`; Umami does not delete anything itself, so the collector's operator must run that deletion.
+`privacyNotice` rejects inputs that would render wrong or unsafe: a non-HTTPS collector or network URL, an email address with extra `mailto` parameters, a date that does not exist, or a retention period that is not a whole number of days.
 It is written to meet the GDPR's transparency duties for a personal site, but it is not legal advice.
 
 ## Develop
@@ -88,17 +102,18 @@ It is written to meet the GDPR's transparency duties for a personal site, but it
 pnpm install --frozen-lockfile
 pnpm build          # dist/, with type declarations
 pnpm check          # Biome, rumdl, tsc, Knip, node --test
-pnpm test:browser   # Playwright against a fixture page and a stub tracker, port 4175
+pnpm test:browser   # Playwright against an HTTPS fixture and Umami's real tracker, port 4175
 ```
 
-The stub in `test/fixture/umami-stub.js` follows the Umami 3.4.0 tracker's contract: data attributes on its script element, the named `before-send` hook, an absolute `url` and a same-origin `referrer` without its origin, and `POST /api/send` with `{ type, payload }`.
-Recheck that contract against the tracker source when the collector upgrades.
+The browser tests run Umami 3.4.0's own tracker source, vendored unchanged in `test/fixture/umami/` under its MIT license, against a fixture served over HTTPS with a throwaway self-signed certificate (the tests need `openssl`).
+When the collector upgrades, replace that file with the new release's `src/tracker/index.ts` and rerun the tests.
 
 ## Releases
 
 Versions follow [Conventional Commits](https://www.conventionalcommits.org/) through release-please.
 Adding an event, a payload field, or anything else that widens collection is `feat` and must update the notice in the same change; removing or renaming an export is `feat!`.
-Merging the release PR tags the version, and `.github/workflows/release.yml` stages it on npm as a trusted publisher with provenance.
+Merging the release PR tags the version, and `.github/workflows/release.yml` builds, tests, and stages it on npm as a trusted publisher with provenance.
+Packing refuses to run without a built `dist/`, so the published files are the ones the release job tested.
 The owner approves each staged version with 2FA before it goes live.
 
 ## License

@@ -21,7 +21,9 @@ Run `actionlint` after editing workflows.
 - The README table, `src/notice.ts`, and `src/analytics.ts` describe the same collection; change all three together and cover the change in tests.
 - Widening collection is `feat`; removing or renaming an export or event is `feat!`.
 - Never collect typed input, link text, email addresses, element classes, or click positions, and never call `umami.identify`.
-- Global Privacy Control, Do Not Track, the opt-out flag, other hostnames, frames, and automation prevent the tracker from loading at all.
+- Global Privacy Control, Do Not Track, the opt-out flag, non-HTTPS pages, other hostnames, frames, prerendering, automation, and a missing or invalid config prevent the tracker from loading at all.
+- The browser module revalidates its config and never trusts page markup; the `before-send` hook stays non-writable and drops any event this module did not send.
+- Browser tests run Umami's real tracker from `test/fixture/umami/`; keep that file byte-identical to the pinned release and excluded from formatting.
 - Analytics never delays rendering, navigation, or downloads.
 - Biome cognitive complexity stays at most 15 per function.
 - Write one sentence per line in Markdown.

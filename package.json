@@ -39,7 +39,7 @@
     "access": "public"
   },
   "engines": {
-    "node": ">=26.8.2"
+    "node": ">=22"
   },
   "packageManager": "pnpm@12.4.1",
   "volta": {
@@ -47,7 +47,7 @@
   },
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
-    "prepack": "pnpm build",
+    "prepack": "node -e \"if (!require('fs').existsSync('dist/analytics.js')) { console.error('Run pnpm build before packing.'); process.exit(1) }\"",
     "check": "pnpm lint && pnpm typecheck && pnpm check:unused && pnpm test",
     "lint": "biome check . && rumdl check .",
     "format": "biome check --write . && rumdl fmt .",
@@ -74,6 +74,9 @@
     "project": [
       "src/**/*.ts",
       "test/**/*.ts"
+    ],
+    "ignoreBinaries": [
+      "openssl"
     ]
   }
 }
