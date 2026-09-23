@@ -69,7 +69,7 @@ Renaming `release.yml` or the environment breaks publishing until the trusted pu
 
 1. Merge the open release-please PR (`chore(release): release X.Y.Z`) after reading its changelog and seeing the required `check` and `Conventional PR title` pass on its head.
    The workflow opens that PR with `GITHUB_TOKEN`, which starts no other workflows, so those checks do not run by themselves: close and reopen the PR, which runs them, and never bypass them.
-   release-please creates tag `vX.Y.Z` and its GitHub Release in the `release-please` job.
+   Merging it makes the `release-please` job create tag `vX.Y.Z` and its GitHub Release.
 2. The `publish` job checks out the tag, installs without a cache, builds, runs `pnpm check` and all three browser engines, and runs `npm stage publish . --provenance --access public`.
    If a step fails after the tag exists, fix the cause and rerun the failed job (`gh run rerun <run-id> --failed`); it rebuilds the same tag.
 
