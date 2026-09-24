@@ -49,6 +49,19 @@ For example, under a new name:
 3. **Operator**: `npm publish --access public` (npm asks for the 2FA code).
 4. Record the reproducibility check above for that version, then continue with step 1 below.
 
+## Release App credentials
+
+The `release-please` job mints its token from the `dougborg-release-please` GitHub App (ID 4392719), the same App the other release-please repositories use.
+It needs the App installed on this repository, the repository variable `RELEASE_PLEASE_APP_ID` set to `4392719`, and the repository secret `RELEASE_PLEASE_APP_PRIVATE_KEY` holding the App's private key.
+Without them the job fails at its first step instead of opening a release PR whose checks cannot run.
+
+**Operator**:
+
+```sh
+gh variable set RELEASE_PLEASE_APP_ID --repo dougborg/site-analytics --body 4392719
+gh secret set RELEASE_PLEASE_APP_PRIVATE_KEY --repo dougborg/site-analytics < dougborg-release-please.private-key.pem
+```
+
 ## 1. Trust the release workflow
 
 **Operator**, on npmjs.com: the package, then **Settings**, then **Trusted Publisher**, then **GitHub Actions**:
@@ -67,8 +80,8 @@ Renaming `release.yml` or the environment breaks publishing until the trusted pu
 
 ## 2. Stage a release through the workflow
 
-1. Merge the open release-please PR (`chore(release): release X.Y.Z`) after reading its changelog and seeing the required `check` and `Conventional PR title` pass on its head.
-   The workflow opens that PR with `GITHUB_TOKEN`, which starts no other workflows, so those checks do not run by themselves: close and reopen the PR, which runs them, and never bypass them.
+1. Merge the open release-please PR (`chore(release): release X.Y.Z`) after reading its changelog and seeing every required check pass on its head.
+   The workflow opens that PR with an installation token from the `dougborg-release-please` GitHub App, so the required checks run on it like any other PR; never bypass them.
    Merging it makes the `release-please` job create tag `vX.Y.Z` and its GitHub Release.
 2. The `publish` job checks out the tag, installs without a cache, builds, runs `pnpm check` and all three browser engines, and runs `npm stage publish . --provenance --access public`.
    If a step fails after the tag exists, fix the cause and rerun the failed job (`gh run rerun <run-id> --failed`); it rebuilds the same tag.
