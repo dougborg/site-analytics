@@ -4,6 +4,7 @@ export {
   configElement,
   type DeclaredEventData,
   declaredEventAttributes,
+  type ValidAnalyticsConfig,
 } from "./config.ts";
 export {
   allowedEvent,
@@ -18,5 +19,7 @@ export {
   type EventSpec,
   type Field,
   PAYLOAD_FIELDS,
+  siteEvents,
 } from "./contract.ts";
+export { undisclosedEvents } from "./disclosure.ts";
 export { type NoticeOptions, privacyNotice } from "./notice.ts";

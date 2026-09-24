@@ -1,8 +1,9 @@
 /**
  * The collection contract shared by every site: each named event this package can send, each field
  * of each event, and the values each field may hold. The browser module drops any event outside it,
- * the privacy notice lists all of it, and tests fail if the README, the notice, or the module drift
- * from it. Widening it is a `feat` that needs a privacy review and a new notice date on every site.
+ * or outside the site's `declaredEvents`; the privacy notice lists exactly the site's events; and
+ * tests fail if the README, the notice, or the module drift from it. Widening it is a `feat` that
+ * needs a privacy review and a new notice date on every site.
  *
  * This file has no imports: the build inlines it into the self-contained browser module.
  */
@@ -94,7 +95,8 @@ export const BUILT_IN_EVENTS = {
 
 /**
  * Events a site may declare on a control with `data-analytics-event="<name>"` and one
- * `data-analytics-<field>="<value>"` attribute per field. Anything else is dropped.
+ * `data-analytics-<field>="<value>"` attribute per field. A site sends one only if it lists it in
+ * `declaredEvents`, which also puts it in the site's privacy notice. Anything else is dropped.
  */
 export const DECLARED_EVENTS = {
   "theme-toggle": {
@@ -118,6 +120,32 @@ export const COLLECTION: Readonly<Record<EventName, EventSpec>> = {
 export type BuiltInEventName = keyof typeof BUILT_IN_EVENTS;
 export type DeclaredEventName = keyof typeof DECLARED_EVENTS;
 export type EventName = BuiltInEventName | DeclaredEventName;
+
+/**
+ * A site's `declaredEvents`, or `undefined` unless the value is an array of distinct names from
+ * `DECLARED_EVENTS`. The browser module refuses a config that fails this, and so does the build.
+ */
+export function declaredEventNames(value: unknown): DeclaredEventName[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const names = new Set<string>();
+  for (const name of value) {
+    if (typeof name !== "string" || !Object.hasOwn(DECLARED_EVENTS, name) || names.has(name)) {
+      return undefined;
+    }
+    names.add(name);
+  }
+  return [...names] as DeclaredEventName[];
+}
+
+/**
+ * The events a site can send, in contract order: every built-in event plus the declared events it
+ * lists. The browser module sends nothing else, and the privacy notice lists exactly these.
+ */
+export function siteEvents(declared: readonly DeclaredEventName[]): EventName[] {
+  return (Object.keys(COLLECTION) as EventName[]).filter(
+    (name) => Object.hasOwn(BUILT_IN_EVENTS, name) || declared.includes(name as DeclaredEventName),
+  );
+}
 
 /** The Web Vitals fields of Umami's `performance` record, plus the time open. */
 export const METRIC_FIELDS = ["ttfb", "fcp", "lcp", "cls", "inp", "duration"] as const;

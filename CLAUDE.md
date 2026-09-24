@@ -19,7 +19,10 @@ Run `actionlint` after editing workflows.
 ## Invariants
 
 - `src/contract.ts` is the collection contract: every named event, field, and allowed value; the browser module drops anything outside it.
-  The README table, the notice's event list (generated from it), and the contract must agree, and `test/contract.test.ts` fails when they do not; change them together.
+  The README table and the contract must agree, and the notice's event list is generated from it: the built-in events plus the site's `declaredEvents`, the same list the module sends.
+  `test/contract.test.ts` fails when any of these disagree; change them together.
+- A site sends a declared event only if its config lists it in `declaredEvents`; `siteEvents()` in `src/contract.ts` is the one definition of what a site can send, used by both the module and the notice, and `privacyNotice` takes the site's config rather than its own copy of the list.
+- `undisclosedEvents()` over-reports rather than misses: it must find every config and declared-event attribute the browser would accept, however the markup is written, so it scans the raw text for JSON objects and attribute names instead of tokenising HTML.
 - Declared events take only fixed choices; a new event, field, or value needs a privacy review, and `test/contract.test.ts` rejects names and values that could carry personal data.
 - `src/contract.ts` has no imports: `scripts/inline-contract.ts` inlines it so the published `dist/analytics.js` stays one self-contained file.
 - Widening collection is `feat`; removing or renaming an export or event is `feat!`.

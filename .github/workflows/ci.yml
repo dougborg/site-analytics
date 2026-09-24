@@ -65,21 +65,24 @@ jobs:
           npm init -y > /dev/null
           npm install --engine-strict ./dougborg-site-analytics-*.tgz
           node --input-type=module -e '
-            import { configElement, privacyNotice } from "@dougborg/site-analytics";
-            const tag = configElement({
+            import { configElement, privacyNotice, undisclosedEvents } from "@dougborg/site-analytics";
+            const analytics = {
               websiteId: "00000000-0000-4000-8000-000000000000",
               collector: "https://stats.example.com",
               hostname: "example.com",
-            });
+              declaredEvents: [],
+            };
+            const tag = configElement(analytics);
             const notice = privacyNotice({
               site: "example.com",
               controller: { name: "A", email: "a@example.com" },
-              collector: "https://stats.example.com",
+              analytics,
               hosting: "at home",
               country: "the United States",
               retentionDays: 90,
               updated: "2026-09-23",
             });
             if (!tag.includes("site-analytics") || !notice.includes("Last updated")) process.exit(1);
+            if (undisclosedEvents(tag, notice).length !== 0) process.exit(1);
             console.log(process.version, "ok");
           '

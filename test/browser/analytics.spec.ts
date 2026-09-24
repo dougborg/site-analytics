@@ -233,6 +233,25 @@ test("drops declared events outside the collection contract", async ({ page, col
   ]);
 });
 
+// An empty list, and a config from before the list existed, both declare nothing.
+for (const path of ["/undeclared", "/unlisted"]) {
+  test(`sends no declared event the site's config does not declare (${path})`, async ({
+    page,
+    collector,
+  }) => {
+    const { sent } = await collector();
+    await page.goto(path);
+    await loaded(sent);
+    for (const id of ["declared", "declared-link", "outbound"]) await page.click(`#${id}`);
+    await expect.poll(() => events(sent).length).toBe(2);
+    // The declared control sends nothing; a link inside one still counts as the link it is.
+    expect(events(sent)).toEqual([
+      ["outbound-click", { url: "https://example.org/x" }],
+      ["outbound-click", { url: "https://example.org/path" }],
+    ]);
+  });
+}
+
 test("drops Umami's own data-umami-event clicks without delaying navigation", async ({
   page,
   collector,
@@ -401,6 +420,8 @@ test("ignores a spoofed or invalid config", async ({ page, collector }) => {
   await page.goto("/spoofed");
   await page.waitForLoadState("load");
   await page.goto("/bad-collector");
+  await page.waitForLoadState("load");
+  await page.goto("/unknown-declared");
   await page.waitForLoadState("load");
   await page.waitForTimeout(300);
   expect(requested).toEqual([]);

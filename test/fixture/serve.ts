@@ -29,12 +29,13 @@ function certificate() {
   return { key: readFile(`${dir}/key.pem`), cert: readFile(`${dir}/cert.pem`) };
 }
 
-const config = (overrides: Record<string, string> = {}) =>
+const config = (overrides: Record<string, unknown> = {}) =>
   JSON.stringify({
     websiteId: "00000000-0000-4000-8000-000000000000",
     collector: "https://stats.example.test",
     // The fixture's port is part of the host; production hosts have none.
     hostname: "127.0.0.1:4175",
+    declaredEvents: ["theme-toggle"],
     ...overrides,
   });
 
@@ -82,7 +83,12 @@ for (const type of ["click", "auxclick"]) {
 const noticeOptions = {
   site: "fixture.example",
   controller: { name: "Fixture Owner", email: "owner@example.com" },
-  collector: "https://stats.example.test",
+  analytics: {
+    websiteId: "00000000-0000-4000-8000-000000000000",
+    collector: "https://stats.example.test",
+    hostname: "fixture.example",
+    declaredEvents: ["theme-toggle" as const],
+  },
   hosting: "on a test server",
   country: "the United States",
   network: { name: "A Network", privacyUrl: "https://network.example/privacy" },
@@ -105,6 +111,19 @@ const html = (body: string): Page => ["text/html", async () => body];
 const pages: Record<string, Page> = {
   "/": html(layout("Fixture home", links)),
   "/other": html(layout("Other", "<h1>Other</h1>")),
+  "/undeclared": html(
+    layout("Undeclared", links, `${configTag(config({ declaredEvents: [] }))}\n${MODULE}`),
+  ),
+  "/unlisted": html(
+    layout("Unlisted", links, `${configTag(config({ declaredEvents: undefined }))}\n${MODULE}`),
+  ),
+  "/unknown-declared": html(
+    layout(
+      "Unknown declared",
+      links,
+      `${configTag(config({ declaredEvents: ["theme-toggle", "signup"] }))}\n${MODULE}`,
+    ),
+  ),
   "/people/alice@example.com/": html(layout("Alice alice@example.com", "<h1>Alice</h1>")),
   "/double": html(
     layout(
