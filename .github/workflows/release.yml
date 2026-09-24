@@ -1,8 +1,7 @@
 name: Release
 
 # release-please keeps one release PR open on main. Merging it creates the
-# tag and GitHub Release; the publish job then runs in this same workflow,
-# because tags created with GITHUB_TOKEN do not trigger other workflows.
+# tag and GitHub Release; the publish job then runs in this same workflow.
 # npm trusts this file (release.yml) as the package's trusted publisher, so
 # the repository stores no npm token; renaming it breaks publishing. The
 # trusted publisher may only stage: a maintainer approves each staged
@@ -22,16 +21,38 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: write
-      pull-requests: write
+    # release-please writes with the release App's installation token, not
+    # GITHUB_TOKEN, so this job grants the default token nothing.
+    permissions: {}
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
+      # The release PR is opened with a token minted from the
+      # dougborg-release-please GitHub App instead of GITHUB_TOKEN, so the
+      # pull_request workflows behind the required checks run on it
+      # (GITHUB_TOKEN-authored events never trigger other workflows).
+      # Without the App credentials the job fails here rather than falling
+      # back to GITHUB_TOKEN and opening a release PR that cannot pass.
+      - name: Require the release App credentials
+        env:
+          APP_ID: ${{ vars.RELEASE_PLEASE_APP_ID }}
+          PRIVATE_KEY_SET: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY != '' }}
+        run: |
+          if [ -z "$APP_ID" ] || [ "$PRIVATE_KEY_SET" != "true" ]; then
+            echo "::error::Set the RELEASE_PLEASE_APP_ID variable and RELEASE_PLEASE_APP_PRIVATE_KEY secret (dougborg-release-please App); see docs/releasing.md."
+            exit 1
+          fi
+      - name: Mint GitHub App installation token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_PLEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
+          token: ${{ steps.app-token.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
