@@ -1,17 +1,21 @@
 /**
  * The privacy notice for a site that uses this package. It describes exactly what the browser
- * module and the supported Umami release collect, and lists every event in the collection
- * contract, so it changes whenever either does.
+ * module and the supported Umami release collect, and lists every event the site can send: the
+ * built-in events plus the declared events it lists. It changes whenever either does.
  */
-import { COLLECTION, type Field } from "./contract.ts";
+import { type AnalyticsConfig, analyticsConfig } from "./config.ts";
+import { COLLECTION, type EventName, type Field, siteEvents } from "./contract.ts";
 
 export interface NoticeOptions {
   /** The site's hostname, as visitors see it. */
   site: string;
   /** The person responsible for the data (the GDPR "controller"). */
   controller: { name: string; email: string };
-  /** Collector origin, matching the analytics config. */
-  collector: string;
+  /**
+   * The site's analytics config: the same object passed to `configElement`. The notice takes the
+   * collector and the declared events from it, so it names every event the module can send.
+   */
+  analytics: AnalyticsConfig;
   /** Where the analytics service runs, as a phrase: "on a server I run at home in Colorado". */
   hosting: string;
   /** The country the collector is in, as it reads in a sentence: "the United States". */
@@ -60,10 +64,11 @@ function range(field: Field) {
   }
 }
 
-/** One list item per event in the collection contract, naming every field it carries. */
-function eventList() {
-  return Object.entries(COLLECTION)
-    .map(([name, { when, fields }]) => {
+/** One list item per event the site can send, naming every field it carries. */
+function eventList(names: readonly EventName[]) {
+  return names
+    .map((name) => {
+      const { when, fields } = COLLECTION[name];
       const data = Object.entries(fields).map(
         ([key, field]) =>
           `<code>${escapeHtml(key)}</code>: ${escapeHtml(field.meaning)}${range(field)}`,
@@ -80,6 +85,9 @@ function httpsUrl(value: string, field: string) {
 }
 
 function validate(options: NoticeOptions) {
+  if (typeof options.analytics !== "object" || options.analytics === null) {
+    throw new Error("analytics must be the site's config, the same object passed to configElement");
+  }
   if (!PLAIN_EMAIL.test(options.controller.email)) {
     throw new Error("controller.email must be a plain email address");
   }
@@ -100,10 +108,12 @@ function validate(options: NoticeOptions) {
 /** HTML for the notice body: sections with `<h2>` headings, for the page to wrap in its layout. */
 export function privacyNotice(options: NoticeOptions): string {
   validate(options);
+  const analytics = analyticsConfig(options.analytics);
+  const events = siteEvents(analytics.declaredEvents);
   const site = escapeHtml(options.site);
   const name = escapeHtml(options.controller.name);
   const email = escapeHtml(options.controller.email);
-  const collector = escapeHtml(httpsUrl(options.collector, "collector").host);
+  const collector = escapeHtml(new URL(analytics.collector).host);
   const network = options.network;
   const networkSentence = network
     ? ` Requests reach it through <a href="${escapeHtml(httpsUrl(network.privacyUrl, "network.privacyUrl").href)}">${escapeHtml(network.name)}</a>, which handles your IP address to route and protect the traffic.`
@@ -119,7 +129,7 @@ export function privacyNotice(options: NoticeOptions): string {
 <li>how quickly the page loaded and responded (the Web Vitals measures TTFB, FCP, LCP, CLS, and INP);</li>
 <li>these named events, and no others, each with only the data listed:
 <ul id="events">
-${eventList()}
+${eventList(events)}
 </ul>
 Never the text of a link or an email address, anything you type, or where on the page you clicked.</li>
 </ul>

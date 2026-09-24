@@ -1,7 +1,7 @@
 # @dougborg/site-analytics
 
 Privacy-respecting [Umami](https://umami.is/) analytics for static sites.
-It loads Umami's own tracker only when the visitor has not opted out, builds every payload from the page itself rather than from what callers pass to Umami, sends only the events in a shared, typed collection contract, and ships the privacy notice that lists exactly that contract.
+It loads Umami's own tracker only when the visitor has not opted out, builds every payload from the page itself rather than from what callers pass to Umami, sends only the events in a shared, typed collection contract that the site has chosen, and ships the privacy notice that lists exactly those events.
 
 It is built for [resume.dougborg.org](https://resume.dougborg.org/) and [dougborg.org](https://dougborg.org/), both counted by a self-hosted Umami at `stats.dougborg.net`.
 It supports the Umami version that collector runs, 3.4.0; see [Compatibility](#compatibility).
@@ -17,10 +17,11 @@ It supports the Umami version that collector runs, 3.4.0; see [Compatibility](#c
 | `outbound-click` | A click or middle click on a link or image-map area to another origin | `url`: origin and path only |
 | `download-click` | A link with `download`, or a same-origin link to a `pdf`, `docx`, `md`, `json`, `zip`, `csv`, `txt`, or `epub` file | `format`: one of those types, or `file` for any other; `file` name |
 | `contact-click` | A `mailto:` or `tel:` link | `method`: `email` or `phone`, never the address |
-| `theme-toggle` | A click inside a control the site declared as its theme switch | `theme`: `light`, `dark`, or `system` |
+| `theme-toggle` | A click inside a control the site declared as its theme switch, only on a site whose config declares it | `theme`: `light`, `dark`, or `system` |
 
 The events and fields in this table are the collection contract, exported as `COLLECTION` (`BUILT_IN_EVENTS` plus `DECLARED_EVENTS`) from `src/contract.ts`.
-The browser module drops any event that is not in it with exactly its fields and allowed values, and tests fail if this table, the privacy notice, or the contract list different events.
+Every site sends the built-in events; it sends a declared event only if it lists it in `declaredEvents`, and its privacy notice lists exactly those events.
+The browser module drops any event that is not in the site's share of the contract with exactly its fields and allowed values, and tests fail if this table and the contract list different events, or if a notice lists different events from the ones its site can send.
 
 Anything that looks like an email address becomes `[email]`: a whole path segment that holds one (other segments keep their encoding), or the address inside a title or event value.
 Campaign values containing `@` or longer than 100 characters are dropped, and only the contract's events carry data.
@@ -59,13 +60,17 @@ The build-time API needs Node 22 or later, the oldest LTS line Node still suppor
 The browser module has no Node dependency at all.
 
 ```ts
-import { configElement } from "@dougborg/site-analytics";
+import { type AnalyticsConfig, configElement } from "@dougborg/site-analytics";
 
-const tag = configElement({
+// One object per site, passed to both configElement() and privacyNotice().
+export const analytics: AnalyticsConfig = {
   websiteId: "00000000-0000-4000-8000-000000000000", // one Umami website per site
   collector: "https://stats.example.com",
   hostname: "example.com",
-});
+  declaredEvents: [], // the declared events this site sends; none when omitted
+};
+
+const tag = configElement(analytics);
 ```
 
 ```html
@@ -75,15 +80,18 @@ const tag = configElement({
 ```
 
 Copy `@dougborg/site-analytics/analytics.js` to your assets, or let a bundler import it; in Astro, `<script>import "@dougborg/site-analytics/analytics.js";</script>` works.
-`configElement` validates the config and throws on a bad website ID, a non-HTTPS collector, or a malformed hostname.
+`configElement` validates the config and throws on a bad website ID, a non-HTTPS collector, a malformed hostname, or a `declaredEvents` list with a name outside `DECLARED_EVENTS` or a repeated name.
 Omit the config element to turn tracking off while keeping the opt-out control working.
 
 A page that can be made to contain an attacker's `<script type="application/json" id="site-analytics">` can point the module at another collector, so treat any such injection as the script injection it is.
 A Content Security Policy is the backstop: allow only your collector in `script-src` and `connect-src`, plus the module itself (Astro may inline it, which needs a hash or nonce).
+Scripts on the page are inside the trust boundary: one that runs before the module can rewrite its config or the built-ins it relies on, and any script can post to the collector with the public website ID, so the guarantees here cover the page's markup, not its other scripts.
 
 ### Declared events
 
-A site may send only the declared events in `DECLARED_EVENTS`, today just `theme-toggle`.
+A site may send only the declared events in `DECLARED_EVENTS`, today just `theme-toggle`, and only those it lists in its config's `declaredEvents`.
+The config element carries the list; the module sends no declared event outside it, and refuses to load at all if the list names anything outside `DECLARED_EVENTS`.
+A config element without the list, such as one rendered by an earlier release, declares nothing.
 Generate the control's attributes so that a name, field, or value outside the contract fails the build:
 
 ```ts
@@ -93,8 +101,8 @@ declaredEventAttributes("theme-toggle", { theme: "dark" });
 // data-analytics-event="theme-toggle" data-analytics-theme="dark"
 ```
 
-A click inside the control sends the event.
-The module ignores a declared event whose name, fields, or values are not exactly in the contract; a link inside such a control still counts as the link it is.
+A click inside the control sends the event, if the site declared it.
+The module ignores a declared event that the site did not declare or whose name, fields, or values are not exactly in the contract; a link inside such a control still counts as the link it is.
 A new declared event, field, or value is a change to this package, never to a site: see [Releases](#releases).
 
 ### Privacy notice
@@ -107,7 +115,7 @@ import { privacyNotice } from "@dougborg/site-analytics";
 const html = privacyNotice({
   site: "example.com",
   controller: { name: "Your Name", email: "you@example.com" },
-  collector: "https://stats.example.com",
+  analytics, // the same config as the pages: the collector and declared events come from it
   hosting: "on a server I run at home in Colorado",
   country: "the United States",
   network: { name: "Cloudflare", privacyUrl: "https://www.cloudflare.com/privacypolicy/" },
@@ -117,10 +125,23 @@ const html = privacyNotice({
 ```
 
 It returns the notice body as HTML with `<h2>` sections for the page's own layout.
+Its event list names every built-in event and each declared event in the config's `declaredEvents`, and nothing else, so it must get the same config object as `configElement`.
+To prove the pages and the notice agree, run `undisclosedEvents(pageHtml, noticeHtml)` over every built page in the site's tests.
+It returns the events a page can send that the notice does not list.
+It does not parse the HTML, so no markup can hide a config from it: it counts every JSON object anywhere in the page that has a `websiteId` or `declaredEvents` key, and every declared event named near a `data-analytics-event` attribute even if the config does not declare it, as an older copy of the module would still send it.
+So it can over-report, never under-report.
+It throws if the notice does not have exactly one event list, or a config on the page names an event outside `DECLARED_EVENTS`:
+
+```ts
+import { undisclosedEvents } from "@dougborg/site-analytics";
+
+assert.deepEqual(undisclosedEvents(await readFile("dist/index.html", "utf8"), noticeHtml), []);
+```
+
 The opt-out control is hidden until the module runs, because it cannot work without JavaScript.
-The notice describes this package's events, so a release that changes what is collected also changes the notice, and consumers should republish their privacy page with a new `updated` date.
+The notice describes this package's events, so a release that changes what is collected also changes the notice, and consumers should republish their privacy page with a new `updated` date; so should a site that changes its `declaredEvents`.
 The notice promises that records are deleted after `retentionDays`; Umami does not delete anything itself, so the collector's operator must run that deletion.
-`privacyNotice` rejects inputs that would render wrong or unsafe: a non-HTTPS collector or network URL, an email address with extra `mailto` parameters, a date that does not exist, or a retention period that is not a whole number of days.
+`privacyNotice` rejects inputs that would render wrong or unsafe: a config that `configElement` would reject, a non-HTTPS network URL, an email address with extra `mailto` parameters, a date that does not exist, or a retention period that is not a whole number of days.
 It is written to meet the GDPR's transparency duties for a personal site, but it is not legal advice.
 
 ## Develop

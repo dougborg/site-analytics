@@ -41,6 +41,9 @@ Keep this table, the Umami websites, and the collector's origin allowlist in ste
 
 ## Declared events
 
-A site may declare only the events in `DECLARED_EVENTS`, today `theme-toggle`.
+A site may declare only the events in `DECLARED_EVENTS`, today `theme-toggle`, and sends one only if it lists it in `declaredEvents`.
+Pass one config object to both `configElement()` and `privacyNotice({ analytics })`, and check the built pages with `undisclosedEvents()` in the site's tests, so the notice lists every event the site can send and no other.
+Upgrading to a release that changes `declaredEvents` means replacing any copied `analytics.js` in the same change: an older copy sends declared events whatever the config says.
 Build the attributes with `declaredEventAttributes()`, so a typo fails the site's build.
+Adding a declared event to a site's list widens what it collects: it needs the same privacy review and new notice date as a release that widens collection.
 A new declared event, field, or value is a change to this package, reviewed here, never a site-local addition.

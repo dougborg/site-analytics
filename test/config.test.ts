@@ -9,7 +9,19 @@ const valid = {
 };
 
 test("accepts a valid config and normalizes the collector origin", () => {
-  assert.deepEqual(analyticsConfig({ ...valid, collector: "https://stats.example.com/" }), valid);
+  assert.deepEqual(analyticsConfig({ ...valid, collector: "https://stats.example.com/" }), {
+    ...valid,
+    declaredEvents: [],
+  });
+});
+
+test("the config element lists the site's declared events, and none by default", () => {
+  const parse = (html: string) => JSON.parse(html.replace(/^<[^>]+>|<\/script>$/g, ""));
+  assert.deepEqual(parse(configElement(valid)).declaredEvents, []);
+  assert.deepEqual(
+    parse(configElement({ ...valid, declaredEvents: ["theme-toggle"] })).declaredEvents,
+    ["theme-toggle"],
+  );
 });
 
 test("lists every problem in an invalid config", () => {
@@ -28,7 +40,7 @@ test("the config element cannot close its script tag", () => {
 const notice = {
   site: "example.com",
   controller: { name: "A <Person>", email: "a@example.com" },
-  collector: "https://stats.example.com",
+  analytics: valid,
   hosting: "on a server at home",
   country: "the United States",
   retentionDays: 90,
@@ -46,14 +58,17 @@ test("the notice escapes its inputs and states the retention and date", () => {
 });
 
 test("the notice names every interaction event the module sends", () => {
-  const html = privacyNotice(notice);
+  const html = privacyNotice({
+    ...notice,
+    analytics: { ...valid, declaredEvents: ["theme-toggle"] },
+  });
   for (const phrase of [
+    "theme switch",
     "scroll",
     "seconds the page was visible",
     "leaves the site",
     "file download",
     "email or phone link",
-    "theme switch",
     "Web Vitals",
     "utm_",
   ]) {
@@ -70,8 +85,10 @@ test("the notice rejects inputs that would render wrong or unsafe", () => {
     [{ retentionDays: 1.5 }, /whole number/],
     [{ controller: { name: "A", email: "a@example.com?cc=b@example.com" } }, /plain email/],
     [{ network: { name: "N", privacyUrl: "javascript:alert(1)" } }, /https URL/],
-    [{ collector: "http://stats.example.com" }, /https URL/],
+    [{ analytics: { ...valid, collector: "http://stats.example.com" } }, /https origin/],
+    [{ analytics: { ...valid, websiteId: "abc" } }, /websiteId must be a UUID/],
     [{ country: " " }, /country must not be empty/],
+    [{ analytics: undefined, collector: "https://stats.example.com" }, /analytics must be/],
   ];
   for (const [change, error] of cases) {
     assert.throws(() => privacyNotice({ ...notice, ...change } as typeof notice), error);

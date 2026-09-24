@@ -5,15 +5,17 @@
  * inlines the contract, so the published file is self-contained and sites can copy it without a
  * bundler.
  */
-import type { AnalyticsConfig } from "./config.ts";
+import type { ValidAnalyticsConfig } from "./config.ts";
 import {
   allowedEvent,
   DECLARED_EVENTS,
   DOWNLOAD_FORMATS,
+  declaredEventNames,
   type EventName,
   METRIC_FIELDS,
   type PAYLOAD_FIELDS,
   SCROLL_DEPTHS,
+  siteEvents,
 } from "./contract.ts";
 
 type Payload = Record<string, unknown>;
@@ -85,7 +87,7 @@ function isCollector(value: unknown): value is string {
   }
 }
 
-function readConfig(): AnalyticsConfig | undefined {
+function readConfig(): ValidAnalyticsConfig | undefined {
   const elements = document.querySelectorAll("#site-analytics");
   const element = elements[0];
   const valid =
@@ -94,18 +96,21 @@ function readConfig(): AnalyticsConfig | undefined {
     element.type === "application/json";
   if (!valid) return undefined;
   try {
-    const { websiteId, collector, hostname } = JSON.parse(element.textContent ?? "") as Payload;
+    const parsed = JSON.parse(element.textContent ?? "") as Payload;
+    const { websiteId, collector, hostname } = parsed;
     if (typeof websiteId !== "string" || !UUID.test(websiteId) || !isCollector(collector)) {
       return undefined;
     }
-    if (typeof hostname !== "string") return undefined;
-    return { websiteId, collector, hostname };
+    // A config without the list predates it and declares nothing; an invalid list is refused.
+    const declaredEvents = declaredEventNames(parsed.declaredEvents ?? []);
+    if (typeof hostname !== "string" || !declaredEvents) return undefined;
+    return { websiteId, collector, hostname, declaredEvents };
   } catch {
     return undefined;
   }
 }
 
-function blocked(config: AnalyticsConfig) {
+function blocked(config: ValidAnalyticsConfig) {
   return (
     location.protocol !== "https:" ||
     // host includes any port, so the production name on another port does not count.
@@ -182,6 +187,11 @@ type Page = { url?: string; referrer?: string; title: string };
 
 /** The website ID this module configured Umami with; any other payload is not ours. */
 let websiteId: string | undefined;
+/**
+ * The events this site can send: the built-in ones plus its `declaredEvents`, exactly the events
+ * its privacy notice lists. Empty until the config is read, so nothing is sent before then.
+ */
+let sendable = new Set<string>();
 /** The page the last page view described; events and Web Vitals belong to it. */
 let currentPage: Page | undefined;
 /**
@@ -256,8 +266,12 @@ function setState(next: State) {
   document.getElementById("site-analytics")?.setAttribute("data-state", next);
 }
 
-/** Send one event, or drop it if the collection contract does not allow exactly this data. */
+/**
+ * Send one event, or drop it if the site did not declare it or the collection contract does not
+ * allow exactly this data.
+ */
 function track(name: EventName, data: EventData) {
+  if (!sendable.has(name)) return;
   const clean: EventData = {};
   for (const [key, value] of Object.entries(data)) {
     clean[key] = typeof value === "string" ? redact(value).slice(0, 200) : value;
@@ -273,7 +287,7 @@ function track(name: EventName, data: EventData) {
   } else if (state === "loading" && queue.length < 50) queue.push([name, clean]);
 }
 
-function loadTracker(config: AnalyticsConfig) {
+function loadTracker(config: ValidAnalyticsConfig) {
   // Umami looks the hook up by name on every send, so it must not be replaceable.
   try {
     Object.defineProperty(win, HOOK, { value: beforeSend, writable: false, configurable: false });
@@ -282,6 +296,7 @@ function loadTracker(config: AnalyticsConfig) {
     return false;
   }
   websiteId = config.websiteId;
+  sendable = new Set(siteEvents(config.declaredEvents));
   const script = document.createElement("script");
   script.defer = true;
   script.src = `${config.collector}/script.js`;
@@ -319,13 +334,15 @@ function loadTracker(config: AnalyticsConfig) {
 /* Interaction events */
 
 /**
- * `data-analytics-event="name"` with one `data-analytics-<field>="value"` per field. Only events in
- * `DECLARED_EVENTS`, with exactly their fields and allowed values, count; anything else is ignored.
+ * `data-analytics-event="name"` with one `data-analytics-<field>="value"` per field. Only events the
+ * site's config declares, with exactly their fields and allowed values, count; anything else is
+ * ignored, so a link inside it still counts as the link it is.
  */
 function declaredEvent(element: Element): [EventName, EventData] | undefined {
   const source = element.closest("[data-analytics-event]");
   const name = source?.getAttribute("data-analytics-event");
-  if (!source || !name || !Object.hasOwn(DECLARED_EVENTS, name)) return undefined;
+  if (!source || !name || !Object.hasOwn(DECLARED_EVENTS, name) || !sendable.has(name))
+    return undefined;
   const data: EventData = {};
   for (const attribute of source.getAttributeNames()) {
     const key = attribute.match(/^data-analytics-([a-z0-9-]+)$/)?.[1];
