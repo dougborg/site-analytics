@@ -60,9 +60,9 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
     "@playwright/test": "1.63.0",
-    "@types/node": "26.6.2",
-    "knip": "6.37.0",
-    "rumdl": "0.2.75",
+    "@types/node": "26.6.3",
+    "knip": "6.38.0",
+    "rumdl": "0.2.77",
     "typescript": "7.0.2"
   },
   "knip": {
