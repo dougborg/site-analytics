@@ -13,24 +13,25 @@ Every site that uses `@dougborg/site-analytics`, how each is configured, and the
 ### Project sites on the blog's origin
 
 These sites are served under paths of `https://dougborg.org`, the blog's origin, so they are part of the blog's row: they use its website ID and link its privacy page, whose notice covers the whole origin, and the opt-out is shared because it lives in per-origin storage.
-Each pins the blog's version so its pages send exactly what that notice lists; upgrade them together with the blog.
+Each pins the blog's version, so its pages send exactly what that notice lists; upgrade them together with the blog.
 Per-site numbers come from filtering the blog's website by path.
 
-| Site | Path | Repository | Pinned version | Integration |
-| --- | --- | --- | --- | --- |
-| Katana OpenAPI Client docs | `/katana-openapi-client/` | [dougborg/katana-openapi-client](https://github.com/dougborg/katana-openapi-client) | `0.4.0` | dougborg/katana-openapi-client#1153 |
-| StockTrim OpenAPI Client docs | `/stocktrim-openapi-client/` | [dougborg/stocktrim-openapi-client](https://github.com/dougborg/stocktrim-openapi-client) | `0.4.0` | dougborg/stocktrim-openapi-client#249 |
-| StatusPro OpenAPI Client docs | `/statuspro-openapi-client/` | [dougborg/statuspro-openapi-client](https://github.com/dougborg/statuspro-openapi-client) | `0.4.0` | dougborg/statuspro-openapi-client#157 |
-| solarized-ui reference | `/solarized-ui/` | [dougborg/solarized-ui](https://github.com/dougborg/solarized-ui) | `0.4.0` | dougborg/solarized-ui#30 |
+| Site | Path | Repository | Integration |
+| --- | --- | --- | --- |
+| Katana OpenAPI Client docs | `/katana-openapi-client/` | [dougborg/katana-openapi-client](https://github.com/dougborg/katana-openapi-client) | dougborg/katana-openapi-client#1153 |
+| StockTrim OpenAPI Client docs | `/stocktrim-openapi-client/` | [dougborg/stocktrim-openapi-client](https://github.com/dougborg/stocktrim-openapi-client) | dougborg/stocktrim-openapi-client#249 |
+| StatusPro OpenAPI Client docs | `/statuspro-openapi-client/` | [dougborg/statuspro-openapi-client](https://github.com/dougborg/statuspro-openapi-client) | dougborg/statuspro-openapi-client#157 |
+| solarized-ui reference | `/solarized-ui/` | [dougborg/solarized-ui](https://github.com/dougborg/solarized-ui) | dougborg/solarized-ui#30 |
 
-The three MkDocs sites fetch the pinned tarball at docs build time and check it against the registry integrity in their `scripts/site-analytics.json`; solarized-ui pins the package in `package.json`.
+The three MkDocs sites fetch the pinned tarball at docs build time, check it against the registry integrity in their `scripts/site-analytics.json`, and fail the deploy if a built page lacks the config element, the module, or the privacy link; solarized-ui pins the package in `package.json` and checks its pages in its tests.
+All four are served over HTTPS only (GitHub Pages' "Enforce HTTPS"): the module never loads on `http:`, so a plain-HTTP page would go uncounted.
 
 Website IDs are public by design: they ship in every tracked page.
-The IDs, collector, and hostnames above match the config element each live site served on 2026-09-24.
+The IDs, collector, and hostnames in the consumer matrix match the config element each of those sites served on 2026-09-24.
 The résumé and the blog pin the version in `package.json`.
 `www.dougborg.net` has no build step, so `services/dougborg-net-home/scripts/sync-analytics.sh` vendors the release into that service and records it in its `analytics.json`.
 The collector at `https://stats.dougborg.net` runs Umami 3.4.0 and accepts `GET`/`HEAD /script.js` and `POST`/`OPTIONS /api/send` only from exactly these three origins.
-Keep this table, the Umami websites, and the collector's origin allowlist in step.
+Keep these tables, the Umami websites, and the collector's origin allowlist in step.
 
 ## One website ID per origin
 
@@ -38,12 +39,13 @@ Keep this table, the Umami websites, and the collector's origin allowlist in ste
   Umami derives session IDs per website, but one server holds them all, as the privacy notice says.
 - `https://dougborg.org` and `https://www.dougborg.net` are different origins, and so are an apex and its `www`; each is a separate row.
 - `configElement({ hostname })` must be the origin's host, with no port; the module refuses to load anywhere else.
-- A new site needs a new Umami website, a new row here, and an origin added to the collector's allowlist in dougborg-dot-net, before its first deploy with analytics.
+- A site on a new origin needs a new Umami website, a new row in the consumer matrix, and its origin added to the collector's allowlist in dougborg-dot-net, before its first deploy with analytics.
+- A site under a path of an existing origin reuses that origin's website ID and privacy page and gets a row under that origin's project sites; the allowlist already covers it.
 
 ## Upgrade rule
 
 1. **Pin exact versions**: `"@dougborg/site-analytics": "X.Y.Z"`, never a range, and commit the lockfile.
-   The résumé copies `dist/analytics.js` byte for byte, and `www.dougborg.net` vendors it with its integrity checked against the registry, so the pin fixes exactly what visitors run.
+   The résumé copies `dist/analytics.js` byte for byte, `www.dougborg.net` vendors it and the MkDocs project sites fetch it at build time, both with its integrity checked against the registry, so the pin fixes exactly what visitors run.
 2. **Never auto-merge** an update of this package, from Dependabot, Renovate, or anyone.
 3. **Read the changelog.**
    A `fix` or a narrowing change can ship once the site's own tests pass.
