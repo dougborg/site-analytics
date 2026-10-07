@@ -6,9 +6,24 @@ Every site that uses `@dougborg/site-analytics`, how each is configured, and the
 
 | Site | Origin | Repository | Umami website ID | Pinned version | Collecting |
 | --- | --- | --- | --- | --- | --- |
-| Résumé | `https://resume.dougborg.org` | [dougborg/resume](https://github.com/dougborg/resume) | `e3dd53c4-1676-47f1-9d59-577cbabaa490` | `0.3.0` | Yes, since 2026-09-24: dougborg/resume#95, dougborg/dougborg-dot-net#390 |
-| Blog | `https://dougborg.org` | [dougborg/dougborg.github.io](https://github.com/dougborg/dougborg.github.io) | `86b4f907-4165-4c7b-9250-fe7402c5262f` | `0.3.0` | Yes, since 2026-09-24: dougborg/dougborg.github.io#7, dougborg/dougborg-dot-net#391 |
-| Home page | `https://www.dougborg.net` | [dougborg/dougborg-dot-net](https://github.com/dougborg/dougborg-dot-net) (`services/dougborg-net-home`) | `7f262dd6-cb58-4296-b02a-a368f6ef3b9c` | `0.3.0`, vendored | Yes, since 2026-09-24: dougborg/dougborg-dot-net#566, dougborg/dougborg-dot-net#391 |
+| Résumé | `https://resume.dougborg.org` | [dougborg/resume](https://github.com/dougborg/resume) | `e3dd53c4-1676-47f1-9d59-577cbabaa490` | `0.4.0` | Yes, since 2026-09-24: dougborg/resume#95, dougborg/dougborg-dot-net#390 |
+| Blog | `https://dougborg.org` | [dougborg/dougborg.github.io](https://github.com/dougborg/dougborg.github.io) | `86b4f907-4165-4c7b-9250-fe7402c5262f` | `0.4.0` | Yes, since 2026-09-24: dougborg/dougborg.github.io#7, dougborg/dougborg-dot-net#391 |
+| Home page | `https://www.dougborg.net` | [dougborg/dougborg-dot-net](https://github.com/dougborg/dougborg-dot-net) (`services/dougborg-net-home`) | `7f262dd6-cb58-4296-b02a-a368f6ef3b9c` | `0.4.0`, vendored | Yes, since 2026-09-24: dougborg/dougborg-dot-net#566, dougborg/dougborg-dot-net#391 |
+
+### Project sites on the blog's origin
+
+These sites are served under paths of `https://dougborg.org`, the blog's origin, so they are part of the blog's row: they use its website ID and link its privacy page, whose notice covers the whole origin, and the opt-out is shared because it lives in per-origin storage.
+Each pins the blog's version so its pages send exactly what that notice lists; upgrade them together with the blog.
+Per-site numbers come from filtering the blog's website by path.
+
+| Site | Path | Repository | Pinned version | Integration |
+| --- | --- | --- | --- | --- |
+| Katana OpenAPI Client docs | `/katana-openapi-client/` | [dougborg/katana-openapi-client](https://github.com/dougborg/katana-openapi-client) | `0.4.0` | dougborg/katana-openapi-client#1153 |
+| StockTrim OpenAPI Client docs | `/stocktrim-openapi-client/` | [dougborg/stocktrim-openapi-client](https://github.com/dougborg/stocktrim-openapi-client) | `0.4.0` | dougborg/stocktrim-openapi-client#249 |
+| StatusPro OpenAPI Client docs | `/statuspro-openapi-client/` | [dougborg/statuspro-openapi-client](https://github.com/dougborg/statuspro-openapi-client) | `0.4.0` | dougborg/statuspro-openapi-client#157 |
+| solarized-ui reference | `/solarized-ui/` | [dougborg/solarized-ui](https://github.com/dougborg/solarized-ui) | `0.4.0` | dougborg/solarized-ui#30 |
+
+The three MkDocs sites fetch the pinned tarball at docs build time and check it against the registry integrity in their `scripts/site-analytics.json`; solarized-ui pins the package in `package.json`.
 
 Website IDs are public by design: they ship in every tracked page.
 The IDs, collector, and hostnames above match the config element each live site served on 2026-09-24.
