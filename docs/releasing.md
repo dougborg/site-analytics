@@ -8,15 +8,14 @@ Every step marked **Operator** needs the npm account owner, a browser session on
 | What | State |
 | --- | --- |
 | Bootstrap publish | Done: `0.2.0`, published by hand on 2026-09-23 from tag `v0.2.0` |
-| Provenance | None for `0.2.0`, the one-time exception below; every later version must have it |
-| Tags | `v0.1.0` (pre-bootstrap, never published) and `v0.2.0`, both protected by the `Protect release tags` ruleset |
-| GitHub Releases | `v0.2.0` only |
-| Trusted publisher | Not yet verified: steps 1 to 3 |
-| Next version | `0.3.0`, proposed by release-please in #11; it must be the first staged, provenance-attested release |
+| Provenance | None for `0.2.0`, the one-time exception below; every later version has it |
+| Tags | `v0.1.0` (pre-bootstrap, never published) and one tag per published version, all protected by the `Protect release tags` ruleset |
+| Trusted publisher | Verified: every version from `0.3.0` on was published by `release.yml` with provenance |
+| Current version | npm's `latest` dist-tag and the latest [GitHub Release](https://github.com/dougborg/site-analytics/releases) |
 
 `v0.1.0` has no Release and no npm version.
 It stays because the tag ruleset forbids deleting it, and it predates every artifact consumers can install.
-Nothing depends on it: the release-please manifest, `package.json`, the latest tag, the latest Release, and npm's `latest` all say `0.2.0`.
+Nothing depends on it: no release-please manifest, `package.json`, Release, or npm version has ever named it.
 
 ## Why the first version was published by hand
 
