@@ -58,11 +58,11 @@
     "preview": "node test/fixture/serve.ts"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.14",
+    "@biomejs/biome": "2.5.15",
     "@playwright/test": "1.63.0",
-    "@types/node": "26.6.2",
-    "knip": "6.37.0",
-    "rumdl": "0.2.75",
+    "@types/node": "26.6.4",
+    "knip": "6.39.0",
+    "rumdl": "0.2.78",
     "typescript": "7.0.2"
   },
   "knip": {
